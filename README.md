@@ -36,6 +36,23 @@ The one thing still on the canvas is **edit chords**, because it *is* the chord
 grid — tap chords there to drop them from the set. A bar across the top says so
 while you are in it. It rides the URL hash, so the back button leaves it.
 
+## Layout
+
+Three arrangements, on the `layout` select. The difference between them is what
+happens to the space a disabled chord leaves behind.
+
+**fixed** keeps the slot open, so a chord never moves and muscle memory holds.
+**fill** drops the slot and lets its row stretch, which gives big targets at the
+cost of everything shifting whenever anything else is switched off. **flex**
+abandons the by-type rows entirely and repacks whatever is enabled into the grid
+closest to square for the space available, so nine chords become a 3x3 rather
+than seven ragged rows — and it re-solves on rotation, so the shape follows the
+screen.
+
+Flex reproduces the original grid when everything is enabled: 84 chords in a
+landscape window come out 12 across and 7 down, which is exactly the by-type
+layout, and 7 by 12 in portrait.
+
 ## Themes
 
 Colour comes from position in the grid, not from a palette: hue runs across the

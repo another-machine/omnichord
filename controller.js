@@ -2,6 +2,7 @@ import { chords } from "./chords.js";
 import { Touch } from "./touch.js";
 import { BPM_MAX, BPM_MIN, RHYTHMS, Sounds, VOICES } from "./sounds.js";
 import { CUSTOM_THEME_ID, THEMES, resolveTheme, themeById } from "./theme.js";
+import { DEFAULT_LAYOUT, isLayout } from "./layout.js";
 
 export const EDIT_HASH = "#edit";
 
@@ -29,7 +30,7 @@ export class Controller {
     this.mode = location.hash === EDIT_HASH ? "edit" : "perform";
     const settings = this.saved();
     // this._chord = settings._chord; // TODO: playing the chord or not
-    this._fixed = settings._fixed;
+    this._layout = settings._layout;
     this._fx = settings._fx === undefined ? true : settings._fx;
     this._invert = settings._invert;
     this._labels = settings._labels;
@@ -74,7 +75,7 @@ export class Controller {
    */
   params() {
     return {
-      _fixed: this._fixed,
+      _layout: this._layout,
       _fx: this._fx,
       _invert: this._invert,
       _labels: this._labels,
@@ -104,7 +105,7 @@ export class Controller {
    */
   normalize(raw) {
     const defaults = {
-      _fixed: false,
+      _layout: DEFAULT_LAYOUT,
       _fx: true,
       _invert: false,
       _labels: true,
@@ -122,6 +123,7 @@ export class Controller {
     if (!raw || typeof raw !== "object") return defaults;
     const {
       _fixed,
+      _layout,
       _fx,
       _invert,
       _labels,
@@ -136,7 +138,17 @@ export class Controller {
     } = raw;
     return {
       ...defaults,
-      _fixed,
+      // `_fixed` is what this was before it grew a third option: a boolean for
+      // whether a disabled chord kept its slot. True meant exactly what
+      // "fixed" means now, false what "fill" means, so an old save — from
+      // storage or from an image made before the change — maps straight over.
+      _layout: isLayout(_layout)
+        ? _layout
+        : _fixed === true
+          ? "fixed"
+          : _fixed === false
+            ? "fill"
+            : defaults._layout,
       _fx,
       _invert,
       _labels,
@@ -179,7 +191,7 @@ export class Controller {
    */
   apply(raw) {
     const settings = this.normalize(raw);
-    this._fixed = settings._fixed;
+    this._layout = settings._layout;
     this._fx = settings._fx;
     this._invert = settings._invert;
     this._labels = settings._labels;
@@ -245,9 +257,6 @@ export class Controller {
    */
   setFlag(key, value) {
     switch (key) {
-      case "fixed":
-        this._fixed = value;
-        break;
       case "invert":
         this._invert = value;
         break;
@@ -263,9 +272,6 @@ export class Controller {
 
   toggle(value) {
     switch (value) {
-      case "fixed":
-        this._fixed = !this._fixed;
-        break;
       case "invert":
         this._invert = !this._invert;
         break;
@@ -289,6 +295,12 @@ export class Controller {
     this._padVoice = this.sounds.setPadVoice(id);
     this.save();
     return this._padVoice;
+  }
+
+  setLayout(id) {
+    this._layout = isLayout(id) ? id : DEFAULT_LAYOUT;
+    this.save();
+    return this._layout;
   }
 
   setTheme(id) {
@@ -465,7 +477,9 @@ export class Controller {
     }
     const copy = { ...chords };
     for (let type in copy) {
-      if (this._fixed) {
+      if (this._layout === "fixed") {
+        // Nulls, not omissions: the renderer needs the slot to still be there
+        // so the chords around it do not close the gap.
         copy[type] = copy[type].map((a) => (this.actives[a.label] ? a : null));
       } else {
         copy[type] = copy[type].filter(({ label }) =>

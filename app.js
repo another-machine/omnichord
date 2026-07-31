@@ -2,6 +2,7 @@ import { Controller, EDIT_HASH } from "./controller.js";
 import { chordTypes, roots } from "./chords.js";
 import { BPM_MAX, BPM_MIN, RHYTHMS, VOICES } from "./sounds.js";
 import { exportImage, openLoadDialog, watchDrops } from "./cartridge.js";
+import { LAYOUTS, layoutCells } from "./layout.js";
 import {
   CUSTOM_THEME_ID,
   HUE_MAX,
@@ -34,7 +35,7 @@ const inputBpm = document.getElementById("bpm");
 const checkFx = document.getElementById("fx");
 const checkLabels = document.getElementById("labels");
 const checkInvert = document.getElementById("invert");
-const checkFixed = document.getElementById("fixed");
+const selectLayout = document.getElementById("layout");
 const saveButton = document.getElementById("save");
 const loadButton = document.getElementById("load");
 const selectTheme = document.getElementById("theme");
@@ -52,6 +53,7 @@ fillOptions(selectPadVoice, voiceIds);
 fillOptions(selectHarpVoice, voiceIds);
 fillOptions(selectRhythm, RHYTHMS);
 fillOptions(selectTheme, [...THEMES.map(({ id }) => id), CUSTOM_THEME_ID]);
+fillOptions(selectLayout, LAYOUTS);
 inputBpm.min = BPM_MIN;
 inputBpm.max = BPM_MAX;
 updateDom();
@@ -80,7 +82,7 @@ function updateDom() {
   checkFx.checked = Boolean(controller._fx);
   checkLabels.checked = Boolean(controller._labels);
   checkInvert.checked = Boolean(controller._invert);
-  checkFixed.checked = Boolean(controller._fixed);
+  selectLayout.value = controller._layout;
   selectTheme.value = controller._themeId;
   // The sliders always show the resolved theme, so picking a preset moves them
   // to its numbers rather than leaving them showing something else.
@@ -173,45 +175,40 @@ saveButton.addEventListener("click", () => {
  * and gaps where `fixed` is holding a slot open.
  */
 function configurationPortrait() {
-  const grid = controller.chords;
-  const types = Object.keys(grid);
+  const grouped = controller.chords;
   const isLandscape = canvas.width > canvas.height;
-  const longest = types.length
-    ? Math.max(...types.map((type) => grid[type].length))
-    : 1;
+  // The picture is drawn to the same proportions as the grid on screen, so
+  // flex packs it the way it packed the real thing rather than solving for a
+  // different shape and producing a save that does not match what was saved.
+  const width = isLandscape ? 384 : 224;
+  const height = isLandscape ? 224 : 384;
+  const cells = layoutCells({
+    grouped,
+    layout: controller._layout,
+    isLandscape,
+    aspect: width / height,
+  });
 
-  const cellsAcross = isLandscape ? longest : types.length || 1;
-  const cellsDown = isLandscape ? types.length || 1 : longest;
-
-  // Authored well above the size it will be reduced to, so the reduction
-  // samples inside blocks rather than across them.
-  const cell = 16;
   const out = document.createElement("canvas");
-  out.width = Math.max(1, cellsAcross * cell);
-  out.height = Math.max(1, cellsDown * cell);
+  out.width = width;
+  out.height = height;
   const paint = out.getContext("2d");
 
-  // Everything with no chord on it — gaps, and the whole picture when the set
-  // is empty — is the same dark the app uses behind the grid.
+  // Everything with no chord on it — the gaps `fixed` holds open, and the
+  // whole picture when nothing is enabled — takes the dark the app uses
+  // behind the grid.
   paint.fillStyle = fillForChord(null, { isDark: true });
   paint.fillRect(0, 0, out.width, out.height);
 
-  types.forEach((type, typeIndex) => {
-    const list = grid[type];
-    const span = (isLandscape ? out.width : out.height) / list.length;
-    list.forEach((chord, index) => {
-      // null is a slot `fixed` is holding open for a disabled chord.
-      if (!chord) return;
-      const along = Math.round(index * span);
-      const alongEnd = Math.round((index + 1) * span);
-      const across = Math.round(typeIndex * cell);
-      paint.fillStyle = fillForChord(chord, {});
-      if (isLandscape) {
-        paint.fillRect(along, across, alongEnd - along, cell);
-      } else {
-        paint.fillRect(across, along, cell, alongEnd - along);
-      }
-    });
+  cells.forEach(({ chord, x, y, w, h }) => {
+    // Rounded to whole pixels at both edges rather than by width, so
+    // neighbours share a boundary and no seam of background shows through.
+    const left = Math.round(x * out.width);
+    const top = Math.round(y * out.height);
+    const right = Math.round((x + w) * out.width);
+    const bottom = Math.round((y + h) * out.height);
+    paint.fillStyle = fillForChord(chord, {});
+    paint.fillRect(left, top, right - left, bottom - top);
   });
   return out;
 }
@@ -269,8 +266,8 @@ checkInvert.addEventListener("change", () => {
   controller.setFlag("invert", checkInvert.checked);
   updateDom();
 });
-checkFixed.addEventListener("change", () => {
-  controller.setFlag("fixed", checkFixed.checked);
+selectLayout.addEventListener("change", () => {
+  controller.setLayout(selectLayout.value);
   updateDom();
 });
 
@@ -362,58 +359,36 @@ function render() {
 
   const { chords } = controller.tick();
 
-  const chordTypes = Object.keys(chords);
-  const chordTypesCount = chordTypes.length;
-  let relY = chordShape.y;
-  let relX = chordShape.x;
-  chordTypes.forEach((type) => {
-    const chordForType = chords[type];
-    const chordCount = chordForType.length;
-
-    let size = (isLandscape ? chordShape.w : chordShape.h) / chordCount;
-    const relW = isLandscape ? size : chordShape.w / chordTypesCount;
-    const relH = isLandscape ? chordShape.h / chordTypesCount : size;
-    chordForType.forEach((chord) => {
-      // chord is null in fixed view
-      if (chord) {
-        const highlighted = controller.highlight(chord);
-        const area = controller.addArea({
-          id: chord.label,
-          chord,
-          x: relX,
-          y: relY,
-          w: relW,
-          h: relH,
-        });
-        renderRectangle(
-          area,
-          fillForChord(area.chord, { isBright: highlighted }),
-          highlighted
-        );
-        if (controller._labels) {
-          renderChordLabel(
-            area,
-            fillForChord(area.chord, {
-              isBright: highlighted,
-              object: true,
-            }),
-            highlighted
-          );
-        }
-      }
-
-      if (isLandscape) {
-        relX += size;
-      } else {
-        relY += size;
-      }
+  // Positions come from layout.js so the three arrangements stay in one
+  // place and the renderer only draws. Aspect is measured in real pixels —
+  // the cells live in 0..1 space, where a square is not square on screen.
+  const cells = layoutCells({
+    grouped: chords,
+    layout: controller._layout,
+    isLandscape,
+    aspect: (chordShape.w * width) / (chordShape.h * height),
+  });
+  cells.forEach(({ chord, x, y, w, h }) => {
+    const highlighted = controller.highlight(chord);
+    const area = controller.addArea({
+      id: chord.label,
+      chord,
+      x: chordShape.x + x * chordShape.w,
+      y: chordShape.y + y * chordShape.h,
+      w: w * chordShape.w,
+      h: h * chordShape.h,
     });
-    if (isLandscape) {
-      relY += relH;
-      relX = chordShape.x;
-    } else {
-      relX += relW;
-      relY = chordShape.y;
+    renderRectangle(
+      area,
+      fillForChord(area.chord, { isBright: highlighted }),
+      highlighted
+    );
+    if (controller._labels) {
+      renderChordLabel(
+        area,
+        fillForChord(area.chord, { isBright: highlighted, object: true }),
+        highlighted
+      );
     }
   });
   controller.addArea({ id: "stepper", ...harpShape });
