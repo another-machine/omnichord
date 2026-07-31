@@ -400,8 +400,13 @@ function render() {
       (isLandscape ? harpShape.h : harpShape.w) / currentChord.stepper.length;
     const activeIndex =
       currentChord.stepper.length - 1 - controller.currentStepIdx;
-    relX = harpShape.x;
-    relY = harpShape.y;
+    // Declared here rather than reused from the chord loop above. They used to
+    // be that loop's cursor, which layout.js took over — leaving these two
+    // assigning to nothing, and a module is strict, so it threw. The throw
+    // landed before controller.process, so a held chord stopped the harp
+    // drawing and stopped pointers being read at all.
+    let relX = harpShape.x;
+    let relY = harpShape.y;
     const relW = isLandscape ? harpShape.w : size;
     const relH = isLandscape ? size : harpShape.h;
     currentChord.stepper.forEach((_, i) => {
