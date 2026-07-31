@@ -154,8 +154,67 @@ selectHarpVoice.addEventListener("change", () => {
  */
 saveButton.addEventListener("click", () => {
   panel.hidden = true;
-  exportImage({ canvas, params: controller.params() });
+  exportImage({ source: configurationPortrait(), params: controller.params() });
 });
+
+/**
+ * The chord grid as flat blocks, drawn to be the cover image of a save.
+ *
+ * Not a screenshot. Stegassette resizes whatever it is given down to the size
+ * the payload needs — around forty pixels across here — with a bilinear
+ * scaler, and a screenshot reduced that far is a smear. Flat blocks survive
+ * it, because everything inside a block is already one colour and only the
+ * seams blend.
+ *
+ * It reads from `controller.chords` and colours through `fillForChord`, the
+ * same two things the real grid draws from, so the picture carries whichever
+ * chords are enabled, in the current theme, laid out the way they are on
+ * screen — including a row stretching to fill when reflow has left it short,
+ * and gaps where `fixed` is holding a slot open.
+ */
+function configurationPortrait() {
+  const grid = controller.chords;
+  const types = Object.keys(grid);
+  const isLandscape = canvas.width > canvas.height;
+  const longest = types.length
+    ? Math.max(...types.map((type) => grid[type].length))
+    : 1;
+
+  const cellsAcross = isLandscape ? longest : types.length || 1;
+  const cellsDown = isLandscape ? types.length || 1 : longest;
+
+  // Authored well above the size it will be reduced to, so the reduction
+  // samples inside blocks rather than across them.
+  const cell = 16;
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, cellsAcross * cell);
+  out.height = Math.max(1, cellsDown * cell);
+  const paint = out.getContext("2d");
+
+  // Everything with no chord on it — gaps, and the whole picture when the set
+  // is empty — is the same dark the app uses behind the grid.
+  paint.fillStyle = fillForChord(null, { isDark: true });
+  paint.fillRect(0, 0, out.width, out.height);
+
+  types.forEach((type, typeIndex) => {
+    const list = grid[type];
+    const span = (isLandscape ? out.width : out.height) / list.length;
+    list.forEach((chord, index) => {
+      // null is a slot `fixed` is holding open for a disabled chord.
+      if (!chord) return;
+      const along = Math.round(index * span);
+      const alongEnd = Math.round((index + 1) * span);
+      const across = Math.round(typeIndex * cell);
+      paint.fillStyle = fillForChord(chord, {});
+      if (isLandscape) {
+        paint.fillRect(along, across, alongEnd - along, cell);
+      } else {
+        paint.fillRect(across, along, cell, alongEnd - along);
+      }
+    });
+  });
+  return out;
+}
 loadButton.addEventListener("click", () => openLoadDialog(applyLoaded));
 
 // Dropping an exported image anywhere works too, which is the desktop path.

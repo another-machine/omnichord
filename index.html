@@ -279,14 +279,18 @@
         border-radius: 0.2em;
         /*
           Stegassette sizes its output from the payload alone, so a couple of
-          kilobytes of settings comes out as a few dozen pixels. Blown up
-          smoothly that reads as a mistake; blown up hard-edged it reads as
-          what it is, which is the data itself.
+          kilobytes of settings comes out as a few dozen pixels across. It has
+          to be scaled UP to be seen, and max-width/max-height cannot do that —
+          they only ever shrink. Hence explicit sizing.
+
+          pixelated keeps the blocks hard-edged on the way up. Smoothed, a
+          40-pixel image blown up to most of the screen is mush; hard-edged, it
+          reads as what it is, which is the chord grid and the data at once.
         */
+        height: auto;
         image-rendering: pixelated;
-        max-height: 78vh;
-        max-width: 100%;
         object-fit: contain;
+        width: min(80vw, 62vh);
         /* The one place a long press has to reach the image itself. */
         touch-action: auto;
         -webkit-touch-callout: default;

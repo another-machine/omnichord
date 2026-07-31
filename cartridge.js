@@ -14,36 +14,32 @@ const SETTINGS_MIMETYPE = "text/json";
 const SETTINGS_NAME = "omnichord.json";
 
 /**
- * Longest edge of the exported image.
+ * Encode settings into a picture of the configuration and put it on screen.
  *
- * The live canvas is drawn at twice CSS pixels, which makes a PNG of several
- * megabytes — unpleasant to save and slow to hand around. Capacity is not the
- * constraint: a packed channel plan carries three bytes a pixel, so even this
- * reduced size holds hundreds of times the couple of kilobytes of settings.
- */
-const EXPORT_MAX_EDGE = 1200;
-
-/** Draw the live canvas down to something worth saving. */
-function snapshot(canvas) {
-  const scale = Math.min(1, EXPORT_MAX_EDGE / Math.max(canvas.width, canvas.height));
-  const out = document.createElement("canvas");
-  out.width = Math.max(1, Math.round(canvas.width * scale));
-  out.height = Math.max(1, Math.round(canvas.height * scale));
-  const context = out.getContext("2d");
-  context.drawImage(canvas, 0, 0, out.width, out.height);
-  return out;
-}
-
-/**
- * Encode settings into a snapshot and put it on screen to be saved.
+ * `source` is drawn by the caller from the chord grid rather than grabbed off
+ * the live canvas. Stegassette sizes its output from the payload alone — a
+ * couple of kilobytes lands around forty pixels across — so a screenshot would
+ * be resampled down to an unreadable smear whatever resolution it started at.
+ * A source authored as flat blocks survives that reduction, because the
+ * scaler is bilinear and block interiors are all one colour.
  *
  * An <img> rather than the canvas itself, because mobile browsers only offer
  * "Save to Photos" on a long press when the element is an image. Tapping it
  * dismisses.
  */
-export function exportImage({ canvas, params }) {
+export function exportImage({ source, params }) {
   const encoded = Stegassette.encode({
-    source: snapshot(canvas),
+    source,
+    // Without this the source is cover-cropped to whatever aspect the payload
+    // implies, which would cut chords off the edge of the picture.
+    aspectRatio: source.width / source.height,
+    // Payload into the blue channel only, instead of the default packed plan
+    // that fills all three. Red and green then keep the cover, so the picture
+    // still reads as the chord grid rather than as noise — measured at roughly
+    // half the drift from the source, consistently across warm and cool
+    // themes. It also costs three times the pixels, which is a second gain
+    // here: the image is bigger, and it was uncomfortably small before.
+    channels: "b",
     entries: [
       {
         mimetype: SETTINGS_MIMETYPE,
