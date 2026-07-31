@@ -90,10 +90,19 @@
         border-radius: 0.2em;
         color: #fff;
         font-family: var(--font-family);
-        font-size: var(--font-size);
         line-height: 1;
         padding: 0.7em;
         text-transform: lowercase;
+      }
+      /*
+        Size is set per group rather than shared, because the two groups answer
+        to different things. A button inside the panel follows the panel, the
+        same way its selects and number field already do — declaring a size
+        here instead is what left the buttons at full size while every label
+        around them shrank.
+      */
+      .panel-inner button {
+        font-size: inherit;
       }
       #menu-open,
       #edit-actions button {
