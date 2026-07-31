@@ -249,6 +249,57 @@
       .panel-inner button {
         margin-top: 0.35em;
       }
+      /* Save and load are one decision, so they share a row. */
+      .pair-buttons {
+        display: flex;
+        gap: 0.5em;
+      }
+      .pair-buttons button {
+        flex: 1;
+      }
+
+      /*
+        The exported image, shown full screen so it can be long-pressed. It is
+        an <img> and not the canvas because that press is the only way to get
+        a picture into the photo library on a phone.
+      */
+      #export-overlay {
+        align-items: center;
+        background: rgba(0, 0, 0, 0.88);
+        display: flex;
+        flex-direction: column;
+        gap: 1em;
+        inset: 0;
+        justify-content: center;
+        padding: 1.5em;
+        position: fixed;
+        z-index: 1000;
+      }
+      #export-overlay img {
+        border-radius: 0.2em;
+        /*
+          Stegassette sizes its output from the payload alone, so a couple of
+          kilobytes of settings comes out as a few dozen pixels. Blown up
+          smoothly that reads as a mistake; blown up hard-edged it reads as
+          what it is, which is the data itself.
+        */
+        image-rendering: pixelated;
+        max-height: 78vh;
+        max-width: 100%;
+        object-fit: contain;
+        /* The one place a long press has to reach the image itself. */
+        touch-action: auto;
+        -webkit-touch-callout: default;
+        -webkit-user-select: auto;
+        user-select: auto;
+      }
+      #export-overlay p {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: var(--control-font-size);
+        margin: 0;
+        text-align: center;
+      }
+
       .panel-inner hr {
         border: none;
         border-top: 1px solid rgba(255, 255, 255, 0.15);
@@ -351,6 +402,10 @@
           </span>
         </label>
         <hr />
+        <span class="row pair-buttons">
+          <button id="save" type="button">save</button>
+          <button id="load" type="button">load</button>
+        </span>
         <button id="edit-chords" type="button">edit chords</button>
         <button id="menu-close" type="button" class="done">done</button>
       </div>
@@ -384,7 +439,8 @@
       {
         "imports": {
           "@amplib/music-theory": "https://unpkg.com/@amplib/music-theory@0.1.0/dist/index.js",
-          "@amplib/sound-synthesis": "https://unpkg.com/@amplib/sound-synthesis@0.2.0/dist/index.js"
+          "@amplib/sound-synthesis": "https://unpkg.com/@amplib/sound-synthesis@0.2.0/dist/index.js",
+          "@amplib/steganography": "https://unpkg.com/@amplib/steganography@0.1.0/dist/index.js"
         }
       }
     </script>

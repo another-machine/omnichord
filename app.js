@@ -1,6 +1,7 @@
 import { Controller, EDIT_HASH } from "./controller.js";
 import { chordTypes, roots } from "./chords.js";
 import { BPM_MAX, BPM_MIN, RHYTHMS, VOICES } from "./sounds.js";
+import { exportImage, openLoadDialog, watchDrops } from "./cartridge.js";
 import {
   CUSTOM_THEME_ID,
   HUE_MAX,
@@ -34,6 +35,8 @@ const checkFx = document.getElementById("fx");
 const checkLabels = document.getElementById("labels");
 const checkInvert = document.getElementById("invert");
 const checkFixed = document.getElementById("fixed");
+const saveButton = document.getElementById("save");
+const loadButton = document.getElementById("load");
 const selectTheme = document.getElementById("theme");
 const themeRanges = {
   hueStart: document.getElementById("hue-start"),
@@ -139,6 +142,32 @@ selectHarpVoice.addEventListener("change", () => {
   controller.setHarpVoice(selectHarpVoice.value);
   updateDom();
 });
+/**
+ * The settings ride inside a picture of the grid that made them.
+ *
+ * Closing the panel first is only so the export is what you are looking at
+ * afterwards — the snapshot never needed it, because the panel is a DOM
+ * overlay and was never drawn into the canvas. Nothing waits on a frame here:
+ * a hidden or backgrounded tab does not run requestAnimationFrame, and a save
+ * that silently produces nothing is far worse than one that captures the
+ * frame already on screen.
+ */
+saveButton.addEventListener("click", () => {
+  panel.hidden = true;
+  exportImage({ canvas, params: controller.params() });
+});
+loadButton.addEventListener("click", () => openLoadDialog(applyLoaded));
+
+// Dropping an exported image anywhere works too, which is the desktop path.
+watchDrops(applyLoaded);
+
+function applyLoaded(params) {
+  if (!params) return;
+  controller.apply(params);
+  panel.hidden = true;
+  updateDom();
+}
+
 selectTheme.addEventListener("change", () => {
   controller.setTheme(selectTheme.value);
   updateDom();
@@ -169,20 +198,20 @@ rhythmToggle.addEventListener("click", () => {
   updateDom();
 });
 checkFx.addEventListener("change", () => {
-  controller.toggle("fx");
+  controller.setFlag("fx", checkFx.checked);
   controller.handleFx();
   updateDom();
 });
 checkLabels.addEventListener("change", () => {
-  controller.toggle("labels");
+  controller.setFlag("labels", checkLabels.checked);
   updateDom();
 });
 checkInvert.addEventListener("change", () => {
-  controller.toggle("invert");
+  controller.setFlag("invert", checkInvert.checked);
   updateDom();
 });
 checkFixed.addEventListener("change", () => {
-  controller.toggle("fixed");
+  controller.setFlag("fixed", checkFixed.checked);
   updateDom();
 });
 

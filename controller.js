@@ -1,9 +1,14 @@
 import { chords } from "./chords.js";
 import { Touch } from "./touch.js";
-import { RHYTHMS, Sounds, VOICES } from "./sounds.js";
+import { BPM_MAX, BPM_MIN, RHYTHMS, Sounds, VOICES } from "./sounds.js";
 import { CUSTOM_THEME_ID, THEMES, resolveTheme, themeById } from "./theme.js";
 
 export const EDIT_HASH = "#edit";
+
+const clampBpm = (value, fallback) =>
+  Number.isFinite(value)
+    ? Math.min(BPM_MAX, Math.max(BPM_MIN, Math.round(value)))
+    : fallback;
 
 const knownVoice = (id, fallback) =>
   VOICES.some((voice) => voice.id === id) ? id : fallback;
@@ -62,26 +67,42 @@ export class Controller {
     }
   }
 
-  save() {
-    localStorage.setItem(
-      "omnichord",
-      JSON.stringify({
-        _fixed: this._fixed,
-        _fx: this._fx,
-        _invert: this._invert,
-        _labels: this._labels,
-        _bpm: this._bpm,
-        _rhythm: this._rhythm,
-        _harpVoice: this._harpVoice,
-        _padVoice: this._padVoice,
-        _themeId: this._themeId,
-        _themeCustom: this._themeCustom,
-        actives: this.actives,
-      })
-    );
+  /**
+   * Every persisted setting, as a plain object. Shared by localStorage and by
+   * the image export, so a save file and a reload restore exactly the same
+   * thing — there is no second list to keep in step.
+   */
+  params() {
+    return {
+      _fixed: this._fixed,
+      _fx: this._fx,
+      _invert: this._invert,
+      _labels: this._labels,
+      _bpm: this._bpm,
+      _rhythm: this._rhythm,
+      _harpVoice: this._harpVoice,
+      _padVoice: this._padVoice,
+      _themeId: this._themeId,
+      _themeCustom: this._themeCustom,
+      actives: this.actives,
+    };
   }
 
-  saved() {
+  save() {
+    localStorage.setItem("omnichord", JSON.stringify(this.params()));
+  }
+
+  /**
+   * Fill in and sanity-check an arbitrary settings object.
+   *
+   * Everything that reaches the controller from outside goes through here —
+   * localStorage, and now a decoded image, which is a file from anywhere at
+   * all. A missing key falls back, and a value naming something that no longer
+   * exists falls back rather than propagating: an unknown rhythm would leave
+   * the drum machine with no pattern, and an unknown voice no oscillator
+   * settings.
+   */
+  normalize(raw) {
     const defaults = {
       _fixed: false,
       _fx: true,
@@ -98,50 +119,85 @@ export class Controller {
         return actives;
       }, {}),
     };
+    if (!raw || typeof raw !== "object") return defaults;
+    const {
+      _fixed,
+      _fx,
+      _invert,
+      _labels,
+      _bpm,
+      _rhythm,
+      _voice,
+      _harpVoice,
+      _padVoice,
+      _themeId,
+      _themeCustom,
+      actives,
+    } = raw;
+    return {
+      ...defaults,
+      _fixed,
+      _fx,
+      _invert,
+      _labels,
+      // A listed key holding undefined overrides the default rather than
+      // falling back to it, so each of these needs an explicit fallback.
+      // `_rate` is what tempo was saved as before the drums were synthesized,
+      // and `_voice` what a single shared voice was saved as before the harp
+      // and the chord could differ.
+      // Clamped here as well as in Sounds. Sounds protects the drum machine,
+      // but an out-of-range value left in the controller would still be shown
+      // in the tempo field and written back to storage — and a settings image
+      // is a file from anywhere, so this is not only about our own writes.
+      _bpm: clampBpm(_bpm, defaults._bpm),
+      _rhythm: RHYTHMS.includes(_rhythm) ? _rhythm : defaults._rhythm,
+      _harpVoice: knownVoice(_harpVoice ?? _voice, defaults._harpVoice),
+      _padVoice: knownVoice(_padVoice ?? _voice, defaults._padVoice),
+      _themeId:
+        _themeId === CUSTOM_THEME_ID || themeById(_themeId)
+          ? _themeId
+          : defaults._themeId,
+      _themeCustom: _themeCustom ?? defaults._themeCustom,
+      actives: actives && typeof actives === "object" ? actives : defaults.actives,
+    };
+  }
+
+  saved() {
     try {
-      const saved = localStorage.getItem("omnichord");
-      const {
-        _fixed,
-        _fx,
-        _invert,
-        _labels,
-        _bpm,
-        _rhythm,
-        _voice,
-        _harpVoice,
-        _padVoice,
-        _themeId,
-        _themeCustom,
-        actives,
-      } = JSON.parse(saved);
-      return {
-        ...defaults,
-        _fixed,
-        _fx,
-        _invert,
-        _labels,
-        // Settings saved before the synthesized drums carry a playbackRate
-        // under `_rate` and a rhythm name that no longer exists. Neither can
-        // just be spread through: a listed key holding undefined overrides
-        // the default rather than falling back to it, so an existing player
-        // would land on undefined bpm instead of 100.
-        _bpm: _bpm ?? defaults._bpm,
-        _rhythm: RHYTHMS.includes(_rhythm) ? _rhythm : defaults._rhythm,
-        // `_voice` is what a single shared voice used to be saved as. Reading
-        // it as the fallback for both halves means an existing player keeps
-        // the sound they had, and only notices the split when they change one.
-        _harpVoice: knownVoice(_harpVoice ?? _voice, defaults._harpVoice),
-        _padVoice: knownVoice(_padVoice ?? _voice, defaults._padVoice),
-        _themeId:
-          _themeId === CUSTOM_THEME_ID || themeById(_themeId)
-            ? _themeId
-            : defaults._themeId,
-        _themeCustom: _themeCustom ?? defaults._themeCustom,
-        actives,
-      };
+      return this.normalize(JSON.parse(localStorage.getItem("omnichord")));
     } catch (e) {
-      return defaults;
+      return this.normalize(null);
     }
+  }
+
+  /**
+   * Adopt a settings object — the load half of the image export.
+   *
+   * Everything audible is pushed back through the same setters the menu uses,
+   * so a loaded file changes the running instrument rather than only taking
+   * effect on the next reload.
+   */
+  apply(raw) {
+    const settings = this.normalize(raw);
+    this._fixed = settings._fixed;
+    this._fx = settings._fx;
+    this._invert = settings._invert;
+    this._labels = settings._labels;
+    this._bpm = settings._bpm;
+    this._rhythm = settings._rhythm;
+    this._harpVoice = settings._harpVoice;
+    this._padVoice = settings._padVoice;
+    this._themeId = settings._themeId;
+    this._themeCustom = settings._themeCustom;
+    this.actives = settings.actives;
+    this.handleFx();
+    this.sounds.setHarpVoice(this._harpVoice);
+    this.sounds.setPadVoice(this._padVoice);
+    this.sounds.setRhythm(this._rhythm);
+    this.sounds.setBpm(this._bpm);
+    this.save();
+    this.onModeChange();
+    return settings;
   }
 
   highlight(chord) {
@@ -177,6 +233,32 @@ export class Controller {
   tick() {
     this.areas = {};
     return { chords: this.chords, chordTypes: this.chordTypes };
+  }
+
+  /**
+   * Set a flag from a checkbox's own state rather than flipping the model.
+   *
+   * Flipping happens to agree when a person clicks — the browser updates
+   * `checked` and then fires the event — but it means the handler never reads
+   * the control it belongs to, so the two drift apart the moment anything sets
+   * the checkbox directly.
+   */
+  setFlag(key, value) {
+    switch (key) {
+      case "fixed":
+        this._fixed = value;
+        break;
+      case "invert":
+        this._invert = value;
+        break;
+      case "labels":
+        this._labels = value;
+        break;
+      case "fx":
+        this._fx = value;
+        break;
+    }
+    this.save();
   }
 
   toggle(value) {
