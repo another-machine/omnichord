@@ -1,0 +1,157 @@
+export class TouchPointer {
+  constructor({ x, y, down }) {
+    this.down = down;
+    this.x = x;
+    this.y = y;
+  }
+  isInArea({ x, y, w, h }) {
+    const inArea =
+      this.x >= x && this.x < x + w && this.y >= y && this.y < y + h;
+    return inArea && this.down ? "down" : null;
+  }
+}
+
+export class Touch {
+  constructor(element = document.body, onInitialized = () => {}) {
+    this.element = element;
+    this.initialized = false;
+    this.onInitialized = onInitialized;
+    element.addEventListener("pointermove", this.handleTouchMove.bind(this));
+    element.addEventListener("pointerleave", this.handleTouchEnd.bind(this));
+    element.addEventListener("pointerup", this.handleTouchEnd.bind(this));
+    element.addEventListener("pointercancel", this.handleTouchEnd.bind(this));
+    element.addEventListener("pointerout", this.handleTouchEnd.bind(this));
+    element.addEventListener("pointerdown", (e) => {
+      this.handleAnyEventOccurred();
+      this.handleTouchStart(e);
+      element.releasePointerCapture(e.pointerId);
+    });
+    this.pointers = {};
+  }
+
+  dimensions() {
+    const gutter = Math.min(this.element.width, this.element.height) * 0.005;
+    const X = gutter * 12;
+    const Y = gutter * 12;
+    const W = this.element.width - X * 2;
+    const H = this.element.height - Y * 2;
+    const X_RAT = X / this.element.width;
+    const Y_RAT = Y / this.element.height;
+    return { gutter, X, Y, W, H, X_RAT, Y_RAT };
+  }
+
+  relateArea({ x, y, w, h }) {
+    const { X, Y, W, H } = this.dimensions();
+    const wFactor = W / this.element.width;
+    const hFactor = H / this.element.height;
+    w *= wFactor;
+    h *= hFactor;
+    x = x * wFactor + X / this.element.width;
+    y = y * hFactor + Y / this.element.height;
+    return { x, y, w, h };
+  }
+
+  async handleAnyEventOccurred() {
+    if (this.initialized) {
+      return;
+    }
+    await this.onInitialized();
+    this.initialized = true;
+  }
+
+  handleTouchMove(event) {
+    event.preventDefault();
+    if (!this.initialized) {
+      return;
+    }
+    const {
+      pointerId: id,
+      offsetX,
+      offsetY,
+      target: { clientWidth, clientHeight },
+    } = event;
+    const x = offsetX / clientWidth;
+    const y = offsetY / clientHeight;
+    this.pointers[id] =
+      this.pointers[id] || new TouchPointer({ x, y, down: false });
+    this.pointers[id].x = x;
+    this.pointers[id].y = y;
+  }
+  handleTouchStart(event) {
+    event.preventDefault();
+    if (!this.initialized) {
+      return;
+    }
+    const {
+      pointerId: id,
+      offsetX,
+      offsetY,
+      target: { clientWidth, clientHeight },
+    } = event;
+    const x = offsetX / clientWidth;
+    const y = offsetY / clientHeight;
+    // A press has to set `down` even when this id already has a pointer.
+    // A mouse or trackpad keeps one pointerId for its whole life and fires
+    // pointermove as the cursor travels, so by the time you press, a pointer
+    // already exists here with down:false — and taking the existing object
+    // without setting the flag swallows the press. It only worked
+    // intermittently because updatePointers collects pointers that match no
+    // area, and a hovering pointer matches none.
+    //
+    // A finger never hit this: every touch is a fresh pointerId whose first
+    // event is the press, so the object was always built with down:true.
+    const pointer = this.pointers[id] || new TouchPointer({ x, y, down: true });
+    pointer.x = x;
+    pointer.y = y;
+    pointer.down = true;
+    this.pointers[id] = pointer;
+  }
+  handleTouchEnd(event) {
+    event.preventDefault();
+    if (!this.initialized) {
+      return;
+    }
+    const { pointerId: id } = event;
+    if (this.pointers[id]) {
+      this.pointers[id].x = Infinity;
+      this.pointers[id].y = Infinity;
+      this.pointers[id].down = false;
+    }
+  }
+
+  updatePointers(areas) {
+    const pointers = Object.values(this.pointers);
+    const pointersA = pointers.map(({ area }) => area);
+    pointers.forEach((pointer) => (pointer.area = undefined));
+    areas.forEach((area) => {
+      pointers.forEach((pointer) => {
+        if (pointer.isInArea(this.relateArea(area))) {
+          pointer.area = area.id;
+        }
+      });
+    });
+    const pointersZ = pointers.map(({ area }) => area);
+    const pointerAreas = {};
+    for (let i = 0; i < pointersA.length; i++) {
+      const key = Object.keys(this.pointers)[i];
+      const a = pointersA[i];
+      const z = pointersZ[i];
+      const pointer = pointers[i];
+      if (a === z) {
+        if (a) {
+          pointerAreas[a] = { pointer, state: "hold" };
+        } else {
+          delete this.pointers[key];
+        }
+      } else if (a) {
+        pointerAreas[a] = { pointer, state: "up" };
+        if (z) {
+          pointerAreas[z] = { pointer, state: "down" };
+        }
+      } else if (z) {
+        pointerAreas[z] = { pointer, state: "down" };
+      }
+    }
+    return pointerAreas;
+  }
+}

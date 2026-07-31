@@ -1,0 +1,359 @@
+import { chords } from "./chords.js";
+import { Touch } from "./touch.js";
+import { RHYTHMS, Sounds, VOICES } from "./sounds.js";
+
+export const EDIT_HASH = "#edit";
+
+const knownVoice = (id, fallback) =>
+  VOICES.some((voice) => voice.id === id) ? id : fallback;
+
+export class Controller {
+  constructor(canvas, onModeChange) {
+    this.sounds = new Sounds();
+    this.onModeChange = onModeChange;
+    window.addEventListener("hashchange", (e) => {
+      e.preventDefault();
+      this.updateMode();
+      this.sounds.stopAll();
+    });
+    // Only one mode lives on the canvas now: "edit", where the chord grid
+    // stops playing and starts enabling and disabling chords. Everything else
+    // that used to require config mode is a form control in the panel.
+    // It stays on the hash so the back button leaves edit mode for free.
+    this.mode = location.hash === EDIT_HASH ? "edit" : "perform";
+    const settings = this.saved();
+    // this._chord = settings._chord; // TODO: playing the chord or not
+    this._fixed = settings._fixed;
+    this._fx = settings._fx === undefined ? true : settings._fx;
+    this._invert = settings._invert;
+    this._labels = settings._labels;
+    this._bpm = settings._bpm;
+    this._rhythm = settings._rhythm;
+    this._harpVoice = settings._harpVoice;
+    this._padVoice = settings._padVoice;
+    this.actives = settings.actives;
+    this.areas = {};
+    this.currentAreaId = null;
+    this.handleFx();
+    // All safe before the audio context exists — Sounds records each choice
+    // and builds from it when initialize() runs.
+    this.sounds.setHarpVoice(this._harpVoice);
+    this.sounds.setPadVoice(this._padVoice);
+    this.sounds.setRhythm(this._rhythm);
+    this.sounds.setBpm(this._bpm);
+    this.touch = new Touch(canvas, () =>
+      this.sounds.initialize(this._rhythm, this._bpm)
+    );
+  }
+
+  addArea(area) {
+    this.areas[area.id] = area;
+    return area;
+  }
+
+  handleFx() {
+    if (this._fx) {
+      this.sounds.fxOn();
+    } else {
+      this.sounds.fxOff();
+    }
+  }
+
+  save() {
+    localStorage.setItem(
+      "omnichord",
+      JSON.stringify({
+        _fixed: this._fixed,
+        _fx: this._fx,
+        _invert: this._invert,
+        _labels: this._labels,
+        _bpm: this._bpm,
+        _rhythm: this._rhythm,
+        _harpVoice: this._harpVoice,
+        _padVoice: this._padVoice,
+        actives: this.actives,
+      })
+    );
+  }
+
+  saved() {
+    const defaults = {
+      _fixed: false,
+      _fx: true,
+      _invert: false,
+      _labels: true,
+      _bpm: 100,
+      _rhythm: "rock",
+      _harpVoice: VOICES[0].id,
+      _padVoice: VOICES[0].id,
+      actives: Object.values(chords).reduce((actives, chordArray) => {
+        chordArray.forEach(({ label }) => (actives[label] = 1));
+        return actives;
+      }, {}),
+    };
+    try {
+      const saved = localStorage.getItem("omnichord");
+      const {
+        _fixed,
+        _fx,
+        _invert,
+        _labels,
+        _bpm,
+        _rhythm,
+        _voice,
+        _harpVoice,
+        _padVoice,
+        actives,
+      } = JSON.parse(saved);
+      return {
+        ...defaults,
+        _fixed,
+        _fx,
+        _invert,
+        _labels,
+        // Settings saved before the synthesized drums carry a playbackRate
+        // under `_rate` and a rhythm name that no longer exists. Neither can
+        // just be spread through: a listed key holding undefined overrides
+        // the default rather than falling back to it, so an existing player
+        // would land on undefined bpm instead of 100.
+        _bpm: _bpm ?? defaults._bpm,
+        _rhythm: RHYTHMS.includes(_rhythm) ? _rhythm : defaults._rhythm,
+        // `_voice` is what a single shared voice used to be saved as. Reading
+        // it as the fallback for both halves means an existing player keeps
+        // the sound they had, and only notices the split when they change one.
+        _harpVoice: knownVoice(_harpVoice ?? _voice, defaults._harpVoice),
+        _padVoice: knownVoice(_padVoice ?? _voice, defaults._padVoice),
+        actives,
+      };
+    } catch (e) {
+      return defaults;
+    }
+  }
+
+  highlight(chord) {
+    if (this.mode === "edit") {
+      return Boolean(this.actives[chord.label]);
+    } else {
+      return this.currentAreaId === chord.label;
+    }
+  }
+
+  updateMode() {
+    this.mode = location.hash === EDIT_HASH ? "edit" : "perform";
+    this.currentAreaId = null;
+    this.onModeChange();
+  }
+
+  process(harpShape) {
+    const states = this.touch.updatePointers(Object.values(this.areas));
+    for (let areaId in states) {
+      const { pointer, state } = states[areaId];
+      if (state) {
+        if (this.touch.initialized) {
+          if (areaId === "stepper") {
+            this.handleStepper(pointer, state, harpShape);
+          } else if (state === "down") {
+            this.handlePad(areaId);
+          }
+        }
+      }
+    }
+  }
+
+  tick() {
+    this.areas = {};
+    return { chords: this.chords, chordTypes: this.chordTypes };
+  }
+
+  toggle(value) {
+    switch (value) {
+      case "fixed":
+        this._fixed = !this._fixed;
+        break;
+      case "invert":
+        this._invert = !this._invert;
+        break;
+      case "labels":
+        this._labels = !this._labels;
+        break;
+      case "fx":
+        this._fx = !this._fx;
+        break;
+    }
+    this.save();
+  }
+
+  setHarpVoice(id) {
+    this._harpVoice = this.sounds.setHarpVoice(id);
+    this.save();
+    return this._harpVoice;
+  }
+
+  setPadVoice(id) {
+    this._padVoice = this.sounds.setPadVoice(id);
+    this.save();
+    return this._padVoice;
+  }
+
+  setRhythm(id) {
+    this._rhythm = this.sounds.setRhythm(id);
+    this.save();
+    return this._rhythm;
+  }
+
+  setBpm(value) {
+    this._bpm = this.sounds.setBpm(value);
+    this.save();
+    return this._bpm;
+  }
+
+  /**
+   * Enable or disable every chord at once.
+   *
+   * Deselecting all really does leave nothing to play — the chords getter
+   * drops empty types, so the grid renders empty until something is selected
+   * again. That is allowed on purpose: it is the fastest way to start from
+   * nothing and pick out the handful you actually want, and the edit bar is
+   * on screen the whole time to undo it.
+   */
+  setAllActive(active) {
+    const value = active ? 1 : 0;
+    Object.values(chords).forEach((chordArray) =>
+      chordArray.forEach(({ label }) => (this.actives[label] = value))
+    );
+    this.save();
+  }
+
+  /**
+   * Move every enabled chord up or down a semitone, keeping its quality.
+   *
+   * `chords[type]` is indexed by root step, so the shift is an index rotation
+   * — C major at 0 becomes C# major at 1 — and wrapping past B lands back on
+   * C rather than falling off the end.
+   *
+   * Selecting everything makes this a no-op, which is correct: the full set is
+   * already every root, so transposing it gives the same set back.
+   */
+  transpose(step) {
+    const next = {};
+    Object.values(chords).forEach((chordArray) => {
+      chordArray.forEach((chord, root) => {
+        if (this.actives[chord.label]) {
+          const length = chordArray.length;
+          const shifted = chordArray[(root + step + length) % length];
+          next[shifted.label] = 1;
+        }
+      });
+    });
+    // Rebuilt rather than mutated in place: shifting one at a time would let
+    // a chord move onto a slot not yet visited and then get moved again.
+    Object.values(chords).forEach((chordArray) =>
+      chordArray.forEach(({ label }) => {
+        this.actives[label] = next[label] ? 1 : 0;
+      })
+    );
+    this.save();
+  }
+
+  /**
+   * Enable a random subset of chords.
+   *
+   * Deliberately unweighted — no key, no diatonic bias. Picking a key would
+   * make it a chord-progression generator, and the point of this is to land
+   * somewhere you would not have chosen, then pare it down by hand.
+   *
+   * The guard matters: at a sparse density an unlucky roll really can select
+   * nothing, and an instrument with no chords on it looks broken rather than
+   * empty.
+   */
+  randomize(density) {
+    const all = Object.values(chords).flat();
+    let enabled = 0;
+    all.forEach((chord) => {
+      const on = Math.random() < density ? 1 : 0;
+      this.actives[chord.label] = on;
+      enabled += on;
+    });
+    if (!enabled) {
+      this.actives[all[Math.floor(Math.random() * all.length)].label] = 1;
+    }
+    this.save();
+  }
+
+  toggleRhythm() {
+    if (!this.sounds.loaded) return false;
+    this.sounds.triggerRhythm();
+    return this.sounds.rhythmOn;
+  }
+
+  handlePad(areaId) {
+    if (this.mode === "edit") {
+      this.actives[areaId] = this.actives[areaId] ? 0 : 1;
+      this.save();
+      return;
+    }
+    if (this.currentAreaId === areaId) {
+      this.currentAreaId = undefined;
+      this.sounds.triggerPadRelease();
+    } else {
+      if (this.currentAreaId) {
+        this.sounds.triggerPadRelease();
+      }
+      this.currentAreaId = areaId;
+      this.sounds.triggerPadAttack(this.areas[areaId].chord);
+    }
+  }
+
+  handleStepper(pointer, state, harpShape) {
+    const relative = this.touch.relateArea(harpShape);
+    const landscape = relative.w < relative.h;
+    const area = this.areas[this.currentAreaId];
+    this.previousStepIdx = this.currentStepIdx;
+    if (area && state !== "up") {
+      const perc = landscape
+        ? (pointer.y - relative.y) / relative.h
+        : (pointer.x - relative.x) / relative.w;
+      let inc = 0;
+      this.currentStepIdx = -1;
+      const step = 1 / area.chord.stepper.length;
+      area.chord.stepper.forEach(() => {
+        inc += step;
+        if (perc <= inc) {
+          this.currentStepIdx++;
+        }
+      });
+    } else {
+      this.currentStepIdx = undefined;
+    }
+    if (
+      state !== "up" &&
+      this.currentStepIdx !== this.previousStepIdx &&
+      this.currentStepIdx !== undefined
+    ) {
+      const index = landscape
+        ? area.chord.stepper.length - 1 - this.currentStepIdx
+        : this.currentStepIdx;
+      this.sounds.triggerHarp(area.chord.stepper[index]);
+    }
+  }
+
+  get chords() {
+    if (this.mode === "edit") {
+      return chords;
+    }
+    const copy = { ...chords };
+    for (let type in copy) {
+      if (this._fixed) {
+        copy[type] = copy[type].map((a) => (this.actives[a.label] ? a : null));
+      } else {
+        copy[type] = copy[type].filter(({ label }) =>
+          Boolean(this.actives[label])
+        );
+        if (!copy[type].length) {
+          delete copy[type];
+        }
+      }
+    }
+    return copy;
+  }
+}

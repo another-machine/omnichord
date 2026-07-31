@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta property="og:url" content="https://omnichord.amplib.app">
+    <meta property="og:title" content="omnichord.amplib.app">
+    <meta property="og:description" content="an omnichord in a web browser.">
+    <meta property="og:image" content="https://omnichord.amplib.app/image.png">
+    <meta property="og:image:url" content="https://omnichord.amplib.app/image.png">
+    <link rel="apple-touch-icon" sizes="76x76" href="/icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icon.png">
+    <title>Omnichord</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        touch-action: none;
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      :root {
+        --font-family: "Andale Mono", "Trebuchet MS", "Lucida Sans Unicode",
+          monospace;
+        --font-size: max(min(1.8vw, 1.8vh), 1rem);
+        /*
+          A reserved lane along the bottom for the config and edit buttons.
+          The canvas stops short of it rather than the buttons floating on top
+          of the instrument — the grid used to run to within a few pixels of
+          them, which read as a button dropped on the artwork rather than a
+          part of the layout.
+        */
+        --controls-height: 3.4rem;
+        /*
+          The lane buttons size themselves, rather than inheriting --font-size.
+          That one has a 1rem floor, which is right for chord labels and wrong
+          here: edit mode puts seven buttons in a row, and at 1rem on a phone
+          they wrap into a stack that covers half the grid. Padding is in em,
+          so it follows this down on its own.
+        */
+        --control-font-size: clamp(0.68rem, 2.6vw, 1rem);
+        --harp-height: 100%;
+        --harp-left: 0;
+        --harp-top: 0;
+        --harp-width: 100%;
+      }
+
+      body {
+        background: #000;
+        font-family: var(--font-family);
+        margin: 0;
+      }
+      body.resizing > * {
+        opacity: 0;
+      }
+      html,
+      body,
+      canvas {
+        height: 100%;
+        width: 100%;
+      }
+      canvas {
+        height: calc(100% - var(--controls-height));
+        left: 0;
+        position: fixed;
+        top: 0;
+        width: 100%;
+      }
+      /*
+        Configuration is DOM, not canvas. It used to be painted into the same
+        surface as the instrument, which meant a chord grid that sometimes
+        played and sometimes toggled, and a tempo you nudged blind with no
+        number shown anywhere. Real controls can say what they are and what
+        value they hold.
+
+        The buttons over the canvas and the ones inside the panel are a single
+        control style, declared once here. The only thing the canvas pair adds
+        is a dark backing: the panel's buttons sit on a dimmed overlay that
+        makes a 0.08 white fill legible, while these sit directly on a grid of
+        saturated colour, where that same fill would vanish.
+      */
+      .panel-inner button,
+      #config-open,
+      #edit-actions button {
+        appearance: none;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0.2em;
+        color: #fff;
+        font-family: var(--font-family);
+        font-size: var(--font-size);
+        line-height: 1;
+        padding: 0.7em;
+        text-transform: lowercase;
+      }
+      #config-open,
+      #edit-actions button {
+        backdrop-filter: blur(12px);
+        background-color: rgba(0, 0, 0, 0.55);
+        font-size: var(--control-font-size);
+        padding: 0.55em 0.85em;
+        white-space: nowrap;
+      }
+      .panel-inner button.done,
+      #edit-actions button.done {
+        background-color: rgba(255, 255, 255, 0.9);
+        border-color: transparent;
+        color: #000;
+      }
+
+      /*
+        The lane itself, shared by both control sets. It is a container rather
+        than the button, so the button keeps its own height instead of
+        stretching to fill the strip.
+      */
+      #config-bar,
+      #edit-actions {
+        align-items: center;
+        bottom: 0;
+        display: flex;
+        height: calc(var(--controls-height) + env(safe-area-inset-bottom));
+        justify-content: center;
+        left: 0;
+        padding-bottom: env(safe-area-inset-bottom);
+        position: fixed;
+        right: 0;
+        z-index: 998;
+      }
+      #config-open[hidden] {
+        display: none;
+      }
+      /*
+        In portrait the harp runs along the bottom edge, which is also where
+        the lane wants to be — and the harp is swiped, so a thumb travelling
+        along it lands on whatever is underneath. The lane moves to the top
+        instead, away from the strip. app.js sets this class because the side
+        the harp sits on depends on `invert`, which CSS cannot see; when
+        inverted the harp is already at the top and the bottom is free.
+      */
+      body.controls-top #config-bar,
+      body.controls-top #edit-actions {
+        bottom: auto;
+        height: calc(var(--controls-height) + env(safe-area-inset-top));
+        padding-bottom: 0;
+        padding-top: env(safe-area-inset-top);
+        top: 0;
+      }
+      body.controls-top #edit-actions {
+        padding: calc(0.5em + env(safe-area-inset-top)) 0.75em 0.5em;
+      }
+      body.controls-top canvas {
+        top: calc(var(--controls-height) + env(safe-area-inset-top));
+      }
+
+      #config-panel {
+        align-items: center;
+        background: rgba(0, 0, 0, 0.72);
+        backdrop-filter: blur(12px);
+        display: flex;
+        inset: 0;
+        justify-content: center;
+        position: fixed;
+        z-index: 999;
+      }
+      #config-panel[hidden] {
+        display: none;
+      }
+      .panel-inner {
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        font-size: var(--font-size);
+        gap: 0.5em;
+        max-height: 100%;
+        overflow-y: auto;
+        padding: 1.25em;
+        width: min(22em, 100%);
+      }
+      .row {
+        align-items: center;
+        display: flex;
+        gap: 1em;
+        justify-content: space-between;
+        line-height: 1;
+        padding: 0.15em 0;
+      }
+      .row > span {
+        opacity: 0.75;
+      }
+      .panel-inner select,
+      .panel-inner input[type="number"] {
+        appearance: none;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0.2em;
+        color: #fff;
+        font-family: var(--font-family);
+        font-size: inherit;
+        padding: 0.35em 0.5em;
+      }
+      /*
+        appearance:none strips the native dropdown arrow along with the native
+        styling, which leaves a select looking exactly like a text field. The
+        chevron puts back the only part of that chrome that carries meaning —
+        that this control opens a list.
+      */
+      .panel-inner select {
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-opacity='.65' stroke-width='1.4' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+        background-position: right 0.6em center;
+        background-repeat: no-repeat;
+        background-size: 0.6em;
+        min-width: 9em;
+        padding-right: 1.9em;
+      }
+      .panel-inner input[type="number"] {
+        text-align: right;
+        width: 4.5em;
+      }
+      /* The unit belongs next to the number, so the value is never ambiguous. */
+      .tempo {
+        align-items: center;
+        display: flex;
+        gap: 0.4em;
+      }
+      .tempo em {
+        font-style: normal;
+        opacity: 0.5;
+      }
+      .panel-inner input[type="checkbox"] {
+        accent-color: #fff;
+        height: 1.1em;
+        margin: 0;
+        width: 1.1em;
+      }
+      .panel-inner button {
+        margin-top: 0.35em;
+      }
+      .panel-inner hr {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.15);
+        margin: 0.4em 0;
+        width: 100%;
+      }
+
+      /*
+        Edit mode is the one thing that still has to live on the canvas,
+        because it IS the chord grid. Its controls take over the same spot the
+        config button occupies, so there is only ever one place to look, and
+        which buttons are sitting there is what tells you whether a tap on a
+        chord plays it or switches it off.
+      */
+      #edit-actions {
+        flex-wrap: wrap;
+        gap: 0.3em;
+        /* Grows past the lane when the buttons wrap, rather than clipping
+           them. Edit mode is not being played through, so covering a little
+           of the grid costs nothing here. */
+        height: auto;
+        min-height: calc(var(--controls-height) + env(safe-area-inset-bottom));
+        padding: 0.5em 0.75em calc(0.5em + env(safe-area-inset-bottom));
+      }
+      #edit-actions[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas></canvas>
+
+    <div id="config-bar">
+      <button id="config-open" type="button">config</button>
+    </div>
+
+    <div id="config-panel" hidden>
+      <div class="panel-inner">
+        <label class="row">
+          <span>chords</span>
+          <select id="pad-voice"></select>
+        </label>
+        <label class="row">
+          <span>harp</span>
+          <select id="harp-voice"></select>
+        </label>
+        <label class="row">
+          <span>rhythm</span>
+          <select id="rhythm"></select>
+        </label>
+        <label class="row">
+          <span>tempo</span>
+          <span class="tempo">
+            <input
+              id="bpm"
+              type="number"
+              inputmode="numeric"
+              min="50"
+              max="190"
+              step="1"
+            />
+            <em>bpm</em>
+          </span>
+        </label>
+        <button id="rhythm-toggle" type="button">start rhythm</button>
+        <hr />
+        <label class="row">
+          <span>fx</span>
+          <input id="fx" type="checkbox" />
+        </label>
+        <label class="row">
+          <span>labels</span>
+          <input id="labels" type="checkbox" />
+        </label>
+        <label class="row">
+          <span>invert</span>
+          <input id="invert" type="checkbox" />
+        </label>
+        <label class="row">
+          <span>fixed</span>
+          <input id="fixed" type="checkbox" />
+        </label>
+        <hr />
+        <button id="edit-chords" type="button">edit chords</button>
+        <button id="config-close" type="button" class="done">done</button>
+      </div>
+    </div>
+
+    <!--
+      Sits where the config button sits, and only one of the two is ever up.
+      Which set of buttons is down there is the signal for whether a tap on a
+      chord plays it or switches it off.
+    -->
+    <div id="edit-actions" hidden>
+      <button id="select-all" type="button">all</button>
+      <button id="deselect-all" type="button">none</button>
+      <button id="transpose-down" type="button">−1</button>
+      <button id="transpose-up" type="button">+1</button>
+      <button id="random-sparse" type="button">sparse</button>
+      <button id="random-dense" type="button">dense</button>
+      <button id="edit-done" type="button" class="done">done</button>
+    </div>
+    <!--
+      There is still no build. @amplib/sound-synthesis leaves its one import of
+      @amplib/music-theory external — ChromaticWall takes a Scale, so a consumer
+      holding both has to hold the same one — and a browser cannot resolve a
+      bare specifier on its own, so the map does it here.
+
+      Both are pinned. music-theory 0.1.0 never assigns Chord#type; chords.js
+      sets it itself, so moving this to 0.1.1 is safe but not required.
+      sound-synthesis 0.2.0 is where TapeDelay and Reverb arrived.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@amplib/music-theory": "https://unpkg.com/@amplib/music-theory@0.1.0/dist/index.js",
+          "@amplib/sound-synthesis": "https://unpkg.com/@amplib/sound-synthesis@0.2.0/dist/index.js"
+        }
+      }
+    </script>
+    <script type="module" src="chords.js"></script>
+    <script type="module" src="controller.js"></script>
+    <script type="module" src="sounds.js"></script>
+    <script type="module" src="touch.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

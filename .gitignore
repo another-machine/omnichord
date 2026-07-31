@@ -1,0 +1,3 @@
+# Dev-only copies of the amplib builds, for testing before a publish.
+# The import map ships pointing at unpkg; see index.html.
+.local/
