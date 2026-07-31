@@ -171,12 +171,20 @@
         color: #fff;
         display: flex;
         flex-direction: column;
-        font-size: var(--font-size);
+        /*
+          The same scale the lane buttons use, not --font-size. That one floors
+          at 1rem, which is right for chord labels painted into the grid and
+          wrong for a form — a dozen rows of label-and-control at 16px on a
+          phone runs off the bottom. Width and padding are in em too, so the
+          whole panel scales as one thing rather than shrinking its text inside
+          a box that stayed put.
+        */
+        font-size: var(--control-font-size);
         gap: 0.5em;
         max-height: 100%;
         overflow-y: auto;
-        padding: 1.25em;
-        width: min(22em, 100%);
+        padding: 1.5em;
+        width: min(26em, 100%);
       }
       .row {
         align-items: center;
