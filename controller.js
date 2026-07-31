@@ -1,6 +1,7 @@
 import { chords } from "./chords.js";
 import { Touch } from "./touch.js";
 import { RHYTHMS, Sounds, VOICES } from "./sounds.js";
+import { CUSTOM_THEME_ID, THEMES, resolveTheme, themeById } from "./theme.js";
 
 export const EDIT_HASH = "#edit";
 
@@ -18,7 +19,7 @@ export class Controller {
     });
     // Only one mode lives on the canvas now: "edit", where the chord grid
     // stops playing and starts enabling and disabling chords. Everything else
-    // that used to require config mode is a form control in the panel.
+    // that used to require the old config mode is a form control in the menu.
     // It stays on the hash so the back button leaves edit mode for free.
     this.mode = location.hash === EDIT_HASH ? "edit" : "perform";
     const settings = this.saved();
@@ -31,6 +32,8 @@ export class Controller {
     this._rhythm = settings._rhythm;
     this._harpVoice = settings._harpVoice;
     this._padVoice = settings._padVoice;
+    this._themeId = settings._themeId;
+    this._themeCustom = settings._themeCustom;
     this.actives = settings.actives;
     this.areas = {};
     this.currentAreaId = null;
@@ -71,6 +74,8 @@ export class Controller {
         _rhythm: this._rhythm,
         _harpVoice: this._harpVoice,
         _padVoice: this._padVoice,
+        _themeId: this._themeId,
+        _themeCustom: this._themeCustom,
         actives: this.actives,
       })
     );
@@ -86,6 +91,8 @@ export class Controller {
       _rhythm: "rock",
       _harpVoice: VOICES[0].id,
       _padVoice: VOICES[0].id,
+      _themeId: THEMES[0].id,
+      _themeCustom: { ...THEMES[0] },
       actives: Object.values(chords).reduce((actives, chordArray) => {
         chordArray.forEach(({ label }) => (actives[label] = 1));
         return actives;
@@ -103,6 +110,8 @@ export class Controller {
         _voice,
         _harpVoice,
         _padVoice,
+        _themeId,
+        _themeCustom,
         actives,
       } = JSON.parse(saved);
       return {
@@ -123,6 +132,11 @@ export class Controller {
         // the sound they had, and only notices the split when they change one.
         _harpVoice: knownVoice(_harpVoice ?? _voice, defaults._harpVoice),
         _padVoice: knownVoice(_padVoice ?? _voice, defaults._padVoice),
+        _themeId:
+          _themeId === CUSTOM_THEME_ID || themeById(_themeId)
+            ? _themeId
+            : defaults._themeId,
+        _themeCustom: _themeCustom ?? defaults._themeCustom,
         actives,
       };
     } catch (e) {
@@ -193,6 +207,32 @@ export class Controller {
     this._padVoice = this.sounds.setPadVoice(id);
     this.save();
     return this._padVoice;
+  }
+
+  setTheme(id) {
+    this._themeId = themeById(id) ? id : CUSTOM_THEME_ID;
+    // Selecting a preset seeds the sliders with its numbers, so switching to
+    // custom afterwards starts from what you were just looking at rather than
+    // snapping back to whatever was there before.
+    const preset = themeById(this._themeId);
+    if (preset) this._themeCustom = { ...preset };
+    this.save();
+    return this._themeId;
+  }
+
+  /**
+   * Move one of the four range endpoints. Any edit makes the theme custom —
+   * the select can no longer honestly name a preset once its numbers differ.
+   */
+  setThemeValue(key, value) {
+    this._themeCustom = { ...this._themeCustom, [key]: value };
+    this._themeId = CUSTOM_THEME_ID;
+    this.save();
+    return this._themeCustom;
+  }
+
+  get theme() {
+    return resolveTheme({ id: this._themeId, custom: this._themeCustom });
   }
 
   setRhythm(id) {

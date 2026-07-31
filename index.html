@@ -26,7 +26,7 @@
           monospace;
         --font-size: max(min(1.8vw, 1.8vh), 1rem);
         /*
-          A reserved lane along the bottom for the config and edit buttons.
+          A reserved lane along the bottom for the menu and edit buttons.
           The canvas stops short of it rather than the buttons floating on top
           of the instrument — the grid used to run to within a few pixels of
           them, which read as a button dropped on the artwork rather than a
@@ -69,7 +69,7 @@
         width: 100%;
       }
       /*
-        Configuration is DOM, not canvas. It used to be painted into the same
+        The menu is DOM, not canvas. It used to be painted into the same
         surface as the instrument, which meant a chord grid that sometimes
         played and sometimes toggled, and a tempo you nudged blind with no
         number shown anywhere. Real controls can say what they are and what
@@ -82,7 +82,7 @@
         saturated colour, where that same fill would vanish.
       */
       .panel-inner button,
-      #config-open,
+      #menu-open,
       #edit-actions button {
         appearance: none;
         background: rgba(255, 255, 255, 0.08);
@@ -95,7 +95,7 @@
         padding: 0.7em;
         text-transform: lowercase;
       }
-      #config-open,
+      #menu-open,
       #edit-actions button {
         backdrop-filter: blur(12px);
         background-color: rgba(0, 0, 0, 0.55);
@@ -115,7 +115,7 @@
         than the button, so the button keeps its own height instead of
         stretching to fill the strip.
       */
-      #config-bar,
+      #menu-bar,
       #edit-actions {
         align-items: center;
         bottom: 0;
@@ -128,7 +128,7 @@
         right: 0;
         z-index: 998;
       }
-      #config-open[hidden] {
+      #menu-open[hidden] {
         display: none;
       }
       /*
@@ -139,7 +139,7 @@
         the harp sits on depends on `invert`, which CSS cannot see; when
         inverted the harp is already at the top and the bottom is free.
       */
-      body.controls-top #config-bar,
+      body.controls-top #menu-bar,
       body.controls-top #edit-actions {
         bottom: auto;
         height: calc(var(--controls-height) + env(safe-area-inset-top));
@@ -154,7 +154,7 @@
         top: calc(var(--controls-height) + env(safe-area-inset-top));
       }
 
-      #config-panel {
+      #menu-panel {
         align-items: center;
         background: rgba(0, 0, 0, 0.72);
         backdrop-filter: blur(12px);
@@ -164,7 +164,7 @@
         position: fixed;
         z-index: 999;
       }
-      #config-panel[hidden] {
+      #menu-panel[hidden] {
         display: none;
       }
       .panel-inner {
@@ -218,6 +218,18 @@
         text-align: right;
         width: 4.5em;
       }
+      /* A start/stop pair reads as one control, so they share a row. */
+      .pair {
+        display: flex;
+        gap: 0.5em;
+        min-width: 9em;
+        width: 9em;
+      }
+      .pair input[type="range"] {
+        accent-color: #fff;
+        min-width: 0;
+        width: 100%;
+      }
       /* The unit belongs next to the number, so the value is never ambiguous. */
       .tempo {
         align-items: center;
@@ -247,7 +259,7 @@
       /*
         Edit mode is the one thing that still has to live on the canvas,
         because it IS the chord grid. Its controls take over the same spot the
-        config button occupies, so there is only ever one place to look, and
+        menu button occupies, so there is only ever one place to look, and
         which buttons are sitting there is what tells you whether a tap on a
         chord plays it or switches it off.
       */
@@ -269,11 +281,11 @@
   <body>
     <canvas></canvas>
 
-    <div id="config-bar">
-      <button id="config-open" type="button">config</button>
+    <div id="menu-bar">
+      <button id="menu-open" type="button">menu</button>
     </div>
 
-    <div id="config-panel" hidden>
+    <div id="menu-panel" hidden>
       <div class="panel-inner">
         <label class="row">
           <span>chords</span>
@@ -320,13 +332,32 @@
           <input id="fixed" type="checkbox" />
         </label>
         <hr />
+        <label class="row">
+          <span>theme</span>
+          <select id="theme"></select>
+        </label>
+        <label class="row">
+          <span>hue</span>
+          <span class="pair">
+            <input id="hue-start" type="range" min="0" max="360" step="1" />
+            <input id="hue-end" type="range" min="0" max="360" step="1" />
+          </span>
+        </label>
+        <label class="row">
+          <span>lightness</span>
+          <span class="pair">
+            <input id="light-start" type="range" min="5" max="70" step="1" />
+            <input id="light-end" type="range" min="5" max="70" step="1" />
+          </span>
+        </label>
+        <hr />
         <button id="edit-chords" type="button">edit chords</button>
-        <button id="config-close" type="button" class="done">done</button>
+        <button id="menu-close" type="button" class="done">done</button>
       </div>
     </div>
 
     <!--
-      Sits where the config button sits, and only one of the two is ever up.
+      Sits where the menu button sits, and only one of the two is ever up.
       Which set of buttons is down there is the signal for whether a tap on a
       chord plays it or switches it off.
     -->

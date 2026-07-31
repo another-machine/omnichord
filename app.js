@@ -1,13 +1,21 @@
 import { Controller, EDIT_HASH } from "./controller.js";
 import { chordTypes, roots } from "./chords.js";
 import { BPM_MAX, BPM_MIN, RHYTHMS, VOICES } from "./sounds.js";
+import {
+  CUSTOM_THEME_ID,
+  HUE_MAX,
+  THEMES,
+  colorFor,
+  neutralFor,
+  resolveTheme,
+} from "./theme.js";
 
 const canvas = document.querySelector("canvas");
 const context = canvas.getContext("2d");
 
-const openButton = document.getElementById("config-open");
-const panel = document.getElementById("config-panel");
-const closeButton = document.getElementById("config-close");
+const openButton = document.getElementById("menu-open");
+const panel = document.getElementById("menu-panel");
+const closeButton = document.getElementById("menu-close");
 const editActions = document.getElementById("edit-actions");
 const editButton = document.getElementById("edit-chords");
 const editDone = document.getElementById("edit-done");
@@ -26,6 +34,13 @@ const checkFx = document.getElementById("fx");
 const checkLabels = document.getElementById("labels");
 const checkInvert = document.getElementById("invert");
 const checkFixed = document.getElementById("fixed");
+const selectTheme = document.getElementById("theme");
+const themeRanges = {
+  hueStart: document.getElementById("hue-start"),
+  hueEnd: document.getElementById("hue-end"),
+  lightStart: document.getElementById("light-start"),
+  lightEnd: document.getElementById("light-end"),
+};
 
 const controller = new Controller(canvas, () => updateDom());
 
@@ -33,6 +48,7 @@ const voiceIds = VOICES.map(({ id }) => id);
 fillOptions(selectPadVoice, voiceIds);
 fillOptions(selectHarpVoice, voiceIds);
 fillOptions(selectRhythm, RHYTHMS);
+fillOptions(selectTheme, [...THEMES.map(({ id }) => id), CUSTOM_THEME_ID]);
 inputBpm.min = BPM_MIN;
 inputBpm.max = BPM_MAX;
 updateDom();
@@ -62,6 +78,14 @@ function updateDom() {
   checkLabels.checked = Boolean(controller._labels);
   checkInvert.checked = Boolean(controller._invert);
   checkFixed.checked = Boolean(controller._fixed);
+  selectTheme.value = controller._themeId;
+  // The sliders always show the resolved theme, so picking a preset moves them
+  // to its numbers rather than leaving them showing something else.
+  const theme = controller.theme;
+  themeRanges.hueStart.value = Math.round(theme.hueStart);
+  themeRanges.hueEnd.value = Math.round(theme.hueEnd);
+  themeRanges.lightStart.value = Math.round(theme.lightStart * 100);
+  themeRanges.lightEnd.value = Math.round(theme.lightEnd * 100);
   rhythmToggle.textContent = controller.sounds.rhythmOn
     ? "stop rhythm"
     : "start rhythm";
@@ -115,6 +139,21 @@ selectHarpVoice.addEventListener("change", () => {
   controller.setHarpVoice(selectHarpVoice.value);
   updateDom();
 });
+selectTheme.addEventListener("change", () => {
+  controller.setTheme(selectTheme.value);
+  updateDom();
+});
+// `input` rather than `change` here, unlike bpm: dragging a colour range wants
+// to be seen while dragging, and unlike a tempo change it costs nothing to
+// apply on every step.
+Object.entries(themeRanges).forEach(([key, input]) => {
+  input.addEventListener("input", () => {
+    const raw = Number(input.value);
+    controller.setThemeValue(key, key.startsWith("hue") ? raw : raw / 100);
+    updateDom();
+  });
+});
+
 selectRhythm.addEventListener("change", () => {
   controller.setRhythm(selectRhythm.value);
   updateDom();
@@ -384,22 +423,33 @@ function renderChordLabel(
   context.restore();
 }
 
+/**
+ * Colour for a chord, from its position in the grid rather than from a table.
+ *
+ * Hue runs across the roots and lightness down the chord types, so the two
+ * ranges a theme carries land exactly on the two axes the grid already has.
+ * Roots divide by 12 rather than by 11 so that the twelfth lands one step
+ * short of the start — with a full 0–360 hue range that keeps the wrap
+ * continuous instead of repeating red at both ends.
+ */
 function fillForChord(chord, { isBright, isDark, object } = {}) {
-  let h;
-  let s;
-  let lFact = 1;
-  if (!chord) {
-    h = 0;
-    s = 0;
-    lFact = 0.7;
-  } else {
-    const offset = chordTypes.indexOf(chord.type);
-    const step = ((1 / 12) * 360) / chordTypes.length;
-    h = ((roots.indexOf(chord.notation) / 12) * 360 + offset * step) % 360;
-    s = 0.85;
-  }
+  const theme = resolveTheme({
+    id: controller._themeId,
+    custom: controller._themeCustom,
+  });
+  const { h, s, l } = chord
+    ? colorFor({
+        theme,
+        hueT: roots.indexOf(chord.notation) / roots.length,
+        lightT:
+          chordTypes.length > 1
+            ? chordTypes.indexOf(chord.type) / (chordTypes.length - 1)
+            : 0,
+        isBright,
+        isDark,
+      })
+    : neutralFor({ theme, isBright, isDark });
   const a = 1;
-  const l = (isBright ? 0.95 : isDark ? 0.2 : 0.3) * lFact;
   const rgb = hsvToRgb(h, s, l);
   return object
     ? { ...rgb, h, s, l, a }

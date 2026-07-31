@@ -22,8 +22,9 @@ this app can overwhelm lower weight machines, looking to optimize it sometime so
 
 ## Configuring it
 
-The `config` button at the bottom opens a panel, and it hides itself while a
-chord is held so it is never underfoot mid-play. Voice and rhythm are select
+The `menu` button opens a panel. It sits in a reserved lane — at the bottom in
+landscape, at the top in portrait, where the harp runs along the bottom edge and
+a swiping thumb would otherwise land on it. Voice and rhythm are select
 boxes, tempo is a number in bpm you can read and type.
 
 None of that used to be true. Configuration was painted into the same canvas as
@@ -34,6 +35,14 @@ pair of nudge buttons with the number shown nowhere at all.
 The one thing still on the canvas is **edit chords**, because it *is* the chord
 grid — tap chords there to drop them from the set. A bar across the top says so
 while you are in it. It rides the URL hash, so the back button leaves it.
+
+## Themes
+
+Colour comes from position in the grid, not from a palette: hue runs across the
+twelve roots, lightness down the seven chord types. A theme is therefore two
+ranges rather than a list of colours, so `rainbow` is simply the full hue circle
+at a flat lightness. Six presets, and moving any of the four sliders makes it
+custom.
 
 ## Voices
 
