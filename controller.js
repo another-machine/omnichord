@@ -2,7 +2,12 @@ import { chords } from "./chords.js";
 import { Touch } from "./touch.js";
 import { BPM_MAX, BPM_MIN, RHYTHMS, Sounds, VOICES } from "./sounds.js";
 import { CUSTOM_THEME_ID, THEMES, resolveTheme, themeById } from "./theme.js";
-import { DEFAULT_LAYOUT, isLayout } from "./layout.js";
+import {
+  DEFAULT_HARP_SIDE,
+  DEFAULT_LAYOUT,
+  isHarpSide,
+  isLayout,
+} from "./layout.js";
 
 export const EDIT_HASH = "#edit";
 
@@ -32,7 +37,7 @@ export class Controller {
     // this._chord = settings._chord; // TODO: playing the chord or not
     this._layout = settings._layout;
     this._fx = settings._fx === undefined ? true : settings._fx;
-    this._invert = settings._invert;
+    this._harpSide = settings._harpSide;
     this._labels = settings._labels;
     this._bpm = settings._bpm;
     this._rhythm = settings._rhythm;
@@ -77,7 +82,7 @@ export class Controller {
     return {
       _layout: this._layout,
       _fx: this._fx,
-      _invert: this._invert,
+      _harpSide: this._harpSide,
       _labels: this._labels,
       _bpm: this._bpm,
       _rhythm: this._rhythm,
@@ -107,7 +112,7 @@ export class Controller {
     const defaults = {
       _layout: DEFAULT_LAYOUT,
       _fx: true,
-      _invert: false,
+      _harpSide: DEFAULT_HARP_SIDE,
       _labels: true,
       _bpm: 100,
       _rhythm: "rock",
@@ -126,6 +131,7 @@ export class Controller {
       _layout,
       _fx,
       _invert,
+      _harpSide,
       _labels,
       _bpm,
       _rhythm,
@@ -150,7 +156,16 @@ export class Controller {
             ? "fill"
             : defaults._layout,
       _fx,
-      _invert,
+      // `_invert` was a boolean for whether the harp swapped ends. True put it
+      // first, false last, so an old save — from storage or from an image made
+      // before the change — maps straight over.
+      _harpSide: isHarpSide(_harpSide)
+        ? _harpSide
+        : _invert === true
+          ? "first"
+          : _invert === false
+            ? "last"
+            : defaults._harpSide,
       _labels,
       // A listed key holding undefined overrides the default rather than
       // falling back to it, so each of these needs an explicit fallback.
@@ -193,7 +208,7 @@ export class Controller {
     const settings = this.normalize(raw);
     this._layout = settings._layout;
     this._fx = settings._fx;
-    this._invert = settings._invert;
+    this._harpSide = settings._harpSide;
     this._labels = settings._labels;
     this._bpm = settings._bpm;
     this._rhythm = settings._rhythm;
@@ -257,9 +272,6 @@ export class Controller {
    */
   setFlag(key, value) {
     switch (key) {
-      case "invert":
-        this._invert = value;
-        break;
       case "labels":
         this._labels = value;
         break;
@@ -272,9 +284,6 @@ export class Controller {
 
   toggle(value) {
     switch (value) {
-      case "invert":
-        this._invert = !this._invert;
-        break;
       case "labels":
         this._labels = !this._labels;
         break;
@@ -295,6 +304,12 @@ export class Controller {
     this._padVoice = this.sounds.setPadVoice(id);
     this.save();
     return this._padVoice;
+  }
+
+  setHarpSide(id) {
+    this._harpSide = isHarpSide(id) ? id : DEFAULT_HARP_SIDE;
+    this.save();
+    return this._harpSide;
   }
 
   setLayout(id) {

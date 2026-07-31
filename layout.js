@@ -22,6 +22,22 @@ export function isLayout(value) {
 }
 
 /**
+ * Which end of the screen the harp strip takes — the left edge in landscape
+ * and the top in portrait, or the right and the bottom.
+ *
+ * "first" and "last" rather than a side, because the side depends on the
+ * orientation and the position does not: the strip is either before the chords
+ * in reading order or after them, whichever way the screen is turned.
+ */
+export const HARP_SIDES = ["first", "last"];
+
+export const DEFAULT_HARP_SIDE = "last";
+
+export function isHarpSide(value) {
+  return HARP_SIDES.includes(value);
+}
+
+/**
  * Rows and columns whose cells come closest to square for a given count and
  * container aspect.
  *

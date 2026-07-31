@@ -144,9 +144,9 @@
         In portrait the harp runs along the bottom edge, which is also where
         the lane wants to be — and the harp is swiped, so a thumb travelling
         along it lands on whatever is underneath. The lane moves to the top
-        instead, away from the strip. app.js sets this class because the side
-        the harp sits on depends on `invert`, which CSS cannot see; when
-        inverted the harp is already at the top and the bottom is free.
+        instead, away from the strip. app.js sets this class because the end
+        the harp takes is a setting CSS cannot see; when the harp is set first
+        it already occupies the top, and the bottom is free.
       */
       body.controls-top #menu-bar,
       body.controls-top #edit-actions {
@@ -360,11 +360,11 @@
     <div id="menu-panel" hidden>
       <div class="panel-inner">
         <label class="row">
-          <span>chords</span>
+          <span>chord voice</span>
           <select id="pad-voice"></select>
         </label>
         <label class="row">
-          <span>harp</span>
+          <span>harp voice</span>
           <select id="harp-voice"></select>
         </label>
         <label class="row">
@@ -395,13 +395,14 @@
           <span>labels</span>
           <input id="labels" type="checkbox" />
         </label>
-        <label class="row">
-          <span>invert</span>
-          <input id="invert" type="checkbox" />
-        </label>
+
         <label class="row">
           <span>layout</span>
           <select id="layout"></select>
+        </label>
+        <label class="row">
+          <span>harp</span>
+          <select id="harp-side"></select>
         </label>
         <hr />
         <label class="row">

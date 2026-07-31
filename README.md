@@ -49,6 +49,11 @@ closest to square for the space available, so nine chords become a 3x3 rather
 than seven ragged rows — and it re-solves on rotation, so the shape follows the
 screen.
 
+The `harp` select puts the strip **first** or **last** — the left edge in
+landscape and the top in portrait, or the right and the bottom. First and last
+rather than a side, because the side depends on which way the screen is turned
+and the position does not. The menu lane follows it to whichever edge is free.
+
 Flex reproduces the original grid when everything is enabled: 84 chords in a
 landscape window come out 12 across and 7 down, which is exactly the by-type
 layout, and 7 by 12 in portrait.

@@ -2,7 +2,7 @@ import { Controller, EDIT_HASH } from "./controller.js";
 import { chordTypes, roots } from "./chords.js";
 import { BPM_MAX, BPM_MIN, RHYTHMS, VOICES } from "./sounds.js";
 import { exportImage, openLoadDialog, watchDrops } from "./cartridge.js";
-import { LAYOUTS, layoutCells } from "./layout.js";
+import { HARP_SIDES, LAYOUTS, layoutCells } from "./layout.js";
 import {
   CUSTOM_THEME_ID,
   HUE_MAX,
@@ -34,7 +34,7 @@ const selectRhythm = document.getElementById("rhythm");
 const inputBpm = document.getElementById("bpm");
 const checkFx = document.getElementById("fx");
 const checkLabels = document.getElementById("labels");
-const checkInvert = document.getElementById("invert");
+const selectHarpSide = document.getElementById("harp-side");
 const selectLayout = document.getElementById("layout");
 const saveButton = document.getElementById("save");
 const loadButton = document.getElementById("load");
@@ -54,6 +54,7 @@ fillOptions(selectHarpVoice, voiceIds);
 fillOptions(selectRhythm, RHYTHMS);
 fillOptions(selectTheme, [...THEMES.map(({ id }) => id), CUSTOM_THEME_ID]);
 fillOptions(selectLayout, LAYOUTS);
+fillOptions(selectHarpSide, HARP_SIDES);
 inputBpm.min = BPM_MIN;
 inputBpm.max = BPM_MAX;
 updateDom();
@@ -81,7 +82,7 @@ function updateDom() {
   inputBpm.value = controller._bpm;
   checkFx.checked = Boolean(controller._fx);
   checkLabels.checked = Boolean(controller._labels);
-  checkInvert.checked = Boolean(controller._invert);
+  selectHarpSide.value = controller._harpSide;
   selectLayout.value = controller._layout;
   selectTheme.value = controller._themeId;
   // The sliders always show the resolved theme, so picking a preset moves them
@@ -262,8 +263,8 @@ checkLabels.addEventListener("change", () => {
   controller.setFlag("labels", checkLabels.checked);
   updateDom();
 });
-checkInvert.addEventListener("change", () => {
-  controller.setFlag("invert", checkInvert.checked);
+selectHarpSide.addEventListener("change", () => {
+  controller.setHarpSide(selectHarpSide.value);
   updateDom();
 });
 selectLayout.addEventListener("change", () => {
@@ -289,14 +290,16 @@ function render() {
   }
   const { height, width } = canvas;
   const isLandscape = width > height;
-  const isInvert = controller._invert;
+  // "first" puts the harp before the chords in reading order — the left edge
+  // in landscape, the top in portrait — and pushes the grid over to make room.
+  const harpFirst = controller._harpSide === "first";
   const shapeFromShapes = (shapes) => {
     const shape = isLandscape ? shapes.landscape : shapes.portrait;
     return {
       w: shape.w,
       h: shape.h,
-      x: isInvert ? shape.xInvert : shape.x,
-      y: isInvert ? shape.yInvert : shape.y,
+      x: harpFirst ? shape.xFirst : shape.x,
+      y: harpFirst ? shape.yFirst : shape.y,
     };
   };
   const chordShape = shapeFromShapes({
@@ -304,17 +307,17 @@ function render() {
       w: 0.8,
       h: 1,
       x: 0,
-      xInvert: 0.2,
+      xFirst: 0.2,
       y: 0,
-      yInvert: 0,
+      yFirst: 0,
     },
     portrait: {
       w: 1,
       h: 0.8,
       x: 0,
-      xInvert: 0,
+      xFirst: 0,
       y: 0,
-      yInvert: 0.2,
+      yFirst: 0.2,
     },
   });
   const harpShape = shapeFromShapes({
@@ -322,24 +325,24 @@ function render() {
       w: 0.2,
       h: 1,
       x: 0.8,
-      xInvert: 0,
+      xFirst: 0,
       y: 0,
-      yInvert: 0,
+      yFirst: 0,
     },
     portrait: {
       w: 1,
       h: 0.2,
       x: 0,
-      xInvert: 0,
+      xFirst: 0,
       y: 0.8,
-      yInvert: 0,
+      yFirst: 0,
     },
   });
 
   // Keep the controls off whichever edge the harp is on. Only portrait puts
   // the harp on a horizontal edge; in landscape it is a vertical strip that a
   // centred lane never reaches.
-  document.body.classList.toggle("controls-top", !isLandscape && !isInvert);
+  document.body.classList.toggle("controls-top", !isLandscape && !harpFirst);
 
   const currentChord =
     controller.currentAreaId && controller.areas[controller.currentAreaId]
