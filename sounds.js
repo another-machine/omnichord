@@ -68,6 +68,37 @@ const HARP_BUS_LEVEL = 0.5;
 const PAD_BUS_LEVEL = 1.4;
 
 /**
+ * And the drums, which used to be set once at the end of initialize().
+ */
+const DRUM_BUS_LEVEL = 0.55;
+
+/**
+ * The three levels are multipliers over the trims above, not gains in their
+ * own right.
+ *
+ * Which means 1 is the balance those three constants were measured into —
+ * harp under chord by about 6 dB, drums under both — rather than some
+ * arbitrary middle. A person who moves a fader and wants back out has one
+ * number to return to, and the tuning survives.
+ *
+ * The range reaches past 1 rather than stopping there. A fader that can only
+ * cut makes "more drums" mean "less of everything else", which is a worse
+ * instrument to play; 2 is about +6 dB and AudioGraph's limiter is downstream
+ * of all three, so the top of the range is loud rather than broken.
+ */
+export const LEVEL_MAX = 2;
+export const LEVEL_DEFAULT = 1;
+
+export const clampLevel = (value, fallback = LEVEL_DEFAULT) =>
+  Number.isFinite(value) ? Math.min(LEVEL_MAX, Math.max(0, value)) : fallback;
+
+/**
+ * Long enough that dragging a fader does not zipper, short enough that it
+ * still feels like the fader rather than something catching up with it.
+ */
+const LEVEL_GLIDE = 0.02;
+
+/**
  * Voices, in the order the selects list them.
  *
  * Each preset carries both halves — `harp` for the plucked strip, `pad` for the
@@ -150,6 +181,53 @@ export class Sounds {
     this.harpVoice = VOICES[0];
     this.padVoice = VOICES[0];
     this.bpm = BPM_DEFAULT;
+    // Recorded before there is a graph to apply them to, like the voices and
+    // the tempo above. initialize() reads them once it has one.
+    this.harpLevel = LEVEL_DEFAULT;
+    this.padLevel = LEVEL_DEFAULT;
+    this.drumLevel = LEVEL_DEFAULT;
+  }
+
+  /**
+   * The three faders. Safe before initialize(), and safe to call as often as a
+   * dragged slider fires — each is a ramp on a bus gain that is already in
+   * circuit, so it rides over whatever is currently ringing rather than
+   * waiting for the next note.
+   */
+  setHarpLevel(value) {
+    this.harpLevel = clampLevel(value);
+    this.applyLevels();
+    return this.harpLevel;
+  }
+
+  setPadLevel(value) {
+    this.padLevel = clampLevel(value);
+    this.applyLevels();
+    return this.padLevel;
+  }
+
+  setDrumLevel(value) {
+    this.drumLevel = clampLevel(value);
+    this.applyLevels();
+    return this.drumLevel;
+  }
+
+  applyLevels() {
+    if (!this.graph) return;
+    const at = this.audioContext.currentTime;
+    this.graph.pluckBus.gain.setTargetAtTime(
+      HARP_BUS_LEVEL * this.harpLevel,
+      at,
+      LEVEL_GLIDE
+    );
+    this.graph.midBus.gain.setTargetAtTime(
+      PAD_BUS_LEVEL * this.padLevel,
+      at,
+      LEVEL_GLIDE
+    );
+    // DrumSynth has no bus to ramp, so this one steps. Inaudible in practice:
+    // the kit is struck rather than sustained, so a change lands between hits.
+    this.drumSynth?.setVolume(DRUM_BUS_LEVEL * this.drumLevel);
   }
 
   /**
@@ -185,8 +263,44 @@ export class Sounds {
   }
 
   /**
-   * Build the audio graph. Must be called from a user gesture — a browser
-   * will not start an AudioContext without one.
+   * Wake the audio: build the graph the first time, and make sure it is
+   * actually running every time after.
+   *
+   * The two halves answer to different events, which is why they are one call
+   * that is safe to make as often as you like. The graph is built from the
+   * press, so the tap that starts the instrument is also the tap that sounds a
+   * chord. But a pointerdown from a finger is not user activation — the spec
+   * grants activation to pointerdown only for a mouse, and to a touch on
+   * pointerup — so a context created there is born suspended on a phone and
+   * stays that way. That is the whole of the "nothing happens until you start
+   * the drums" bug: opening the menu and pressing a button are clicks, and a
+   * click has the activation the finger's press did not.
+   */
+  async activate(rhythm, bpm) {
+    // `initialize` sets `loaded` to false before its first await, and this
+    // runs synchronously up to here from the event handler, so a second
+    // activate arriving in the same breath cannot build a second graph.
+    if (this.loaded === undefined) {
+      await this.initialize(rhythm, bpm);
+    }
+    this.resume();
+  }
+
+  /**
+   * Deliberately not awaited by `activate`. A browser that refuses the resume
+   * — because this particular event carried no activation — may leave the
+   * promise rejected or unsettled, and neither may be allowed to stall the
+   * caller, which has the initialization flag to set.
+   */
+  resume() {
+    if (this.audioContext?.state === "suspended") {
+      this.audioContext.resume().catch(() => {});
+    }
+  }
+
+  /**
+   * Build the audio graph. Reached through `activate`, from a user gesture —
+   * a browser will not start an AudioContext without one.
    */
   async initialize(rhythm, bpm) {
     this.loaded = false;
@@ -203,8 +317,6 @@ export class Sounds {
     // headroomPad exactly, which is why updateAutoMakeup is never called.
     this.buildInsert();
 
-    this.graph.pluckBus.gain.value = HARP_BUS_LEVEL;
-    this.graph.midBus.gain.value = PAD_BUS_LEVEL;
     this.harpVoices = Array.from({ length: HARP_VOICE_COUNT }, () => {
       const panner = audioContext.createStereoPanner();
       panner.connect(this.graph.pluckBus);
@@ -242,7 +354,9 @@ export class Sounds {
       bpm: this.bpm,
       pattern: RHYTHMS[this.rhythmIndex],
     });
-    this.drumSynth.setVolume(0.55);
+    // All three bus trims at once, now that every bus exists. Whatever the
+    // faders were set to before the audio started is what they take.
+    this.applyLevels();
 
     this.handleFxChange();
 

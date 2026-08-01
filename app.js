@@ -29,6 +29,27 @@ import {
  */
 const INK_OPACITY = 0.6;
 
+/**
+ * The size the save's cover picture is drawn at, long edge and short.
+ *
+ * A free choice, and it used to be pinned needlessly low at 384 by 224.
+ * Stegassette sizes its output from the payload alone and scales whatever
+ * cover it is handed to fit, so nothing downstream cares what these are — the
+ * saved image comes out the same few dozen pixels across either way.
+ *
+ * What it buys is where the block edges land. The grid is twelve roots by
+ * seven types and every cell is snapped to whole pixels, so at 224 across a
+ * column was 18.67 pixels rounded to 18 or 19 — a five percent error baked in
+ * before the reduction even starts. At 672 the same column is 56 and the error
+ * is under half a percent, so the boundaries the scaler averages across are
+ * the ones the layout actually asked for.
+ *
+ * The ratio is the one that was there, kept because it is the shape the grid
+ * is packed into and flex answers to it.
+ */
+const PORTRAIT_LONG = 1152;
+const PORTRAIT_SHORT = 672;
+
 const canvas = document.querySelector("canvas");
 const context = canvas.getContext("2d");
 
@@ -49,6 +70,13 @@ const selectPadVoice = document.getElementById("pad-voice");
 const selectHarpVoice = document.getElementById("harp-voice");
 const selectRhythm = document.getElementById("rhythm");
 const inputBpm = document.getElementById("bpm");
+// Keyed by the controller setter each one drives, so the wiring below is one
+// loop rather than three near-identical handlers.
+const levelRanges = {
+  setPadLevel: document.getElementById("pad-level"),
+  setHarpLevel: document.getElementById("harp-level"),
+  setDrumLevel: document.getElementById("drum-level"),
+};
 const checkFx = document.getElementById("fx");
 const checkLabels = document.getElementById("labels");
 const selectHarpSide = document.getElementById("harp-side");
@@ -99,6 +127,11 @@ function updateDom() {
   inputBpm.value = controller._bpm;
   checkFx.checked = Boolean(controller._fx);
   checkLabels.checked = Boolean(controller._labels);
+  // Stored as multipliers and shown as whole percent, the same way the theme's
+  // lightness pair is.
+  levelRanges.setPadLevel.value = Math.round(controller._padLevel * 100);
+  levelRanges.setHarpLevel.value = Math.round(controller._harpLevel * 100);
+  levelRanges.setDrumLevel.value = Math.round(controller._drumLevel * 100);
   selectHarpSide.value = controller._harpSide;
   selectLayout.value = controller._layout;
   selectTheme.value = controller._themeId;
@@ -181,10 +214,10 @@ saveButton.addEventListener("click", () => {
  * The chord grid as flat blocks, drawn to be the cover image of a save.
  *
  * Not a screenshot. Stegassette resizes whatever it is given down to the size
- * the payload needs — around forty pixels across here — with a bilinear
- * scaler, and a screenshot reduced that far is a smear. Flat blocks survive
- * it, because everything inside a block is already one colour and only the
- * seams blend.
+ * the payload needs — a few dozen pixels across here — with a bilinear scaler,
+ * and a screenshot reduced that far is a smear. Flat blocks survive it,
+ * because everything inside a block is already one colour and only the seams
+ * blend. The size it is drawn at is ours to pick; see PORTRAIT_LONG.
  *
  * It reads from `controller.chords` and colours through `fillForChord`, the
  * same two things the real grid draws from, so the picture carries whichever
@@ -198,11 +231,11 @@ function configurationPortrait() {
   // The picture is drawn to the same proportions as the grid on screen, so
   // flex packs it the way it packed the real thing rather than solving for a
   // different shape and producing a save that does not match what was saved.
-  const width = isLandscape ? 384 : 224;
-  const height = isLandscape ? 224 : 384;
+  const width = isLandscape ? PORTRAIT_LONG : PORTRAIT_SHORT;
+  const height = isLandscape ? PORTRAIT_SHORT : PORTRAIT_LONG;
   const cells = layoutCells({
     grouped,
-    layout: controller._layout,
+    layout: controller.layout,
     isLandscape,
     aspect: width / height,
   });
@@ -218,6 +251,9 @@ function configurationPortrait() {
   paint.fillStyle = fillForChord(null, { isDark: true });
   paint.fillRect(0, 0, out.width, out.height);
 
+  // Colour runs all the way to the edge. The frame on a save is the encoder's
+  // border ring — see cartridge.js — which keeps whatever cover it lands on,
+  // so drawing a margin here would only put a second, redundant one inside it.
   cells.forEach(({ chord, x, y, w, h }) => {
     // Rounded to whole pixels at both edges rather than by width, so
     // neighbours share a boundary and no seam of background shows through.
@@ -254,6 +290,18 @@ Object.entries(themeRanges).forEach(([key, input]) => {
     const raw = Number(input.value);
     controller.setThemeValue(key, key.startsWith("hue") ? raw : raw / 100);
     updateDom();
+  });
+});
+
+// `input` rather than `change`, like the theme ranges and unlike bpm: a fader
+// has to be heard while it is moving, and Sounds ramps each step onto a bus
+// that is already in circuit, so applying every one costs nothing.
+//
+// No updateDom — it would write the slider's own value back to it mid-drag,
+// and the only other control these move is each other, which they do not.
+Object.entries(levelRanges).forEach(([setter, input]) => {
+  input.addEventListener("input", () => {
+    controller[setter](Number(input.value) / 100);
   });
 });
 
@@ -368,12 +416,20 @@ function render() {
   // Always reachable, including mid-chord — the only thing that takes it away
   // is edit mode, whose buttons occupy this exact spot.
   openButton.hidden = controller.mode === "edit";
-  const currentFillBright = currentChord
-    ? fillForChord(currentChord, { isBright: true })
-    : "white";
-  const currentFill = fillForChord(currentChord, {});
+  // Kept as colour objects rather than strings, because the DOM controls need
+  // the h/s/l to pick their ink from. The bright shade used to be the literal
+  // "white" when nothing was held; the neutral's own bright shade is near
+  // enough to it, and unlike a keyword it can be measured against.
+  const brightColor = fillForChord(currentChord, {
+    isBright: true,
+    object: true,
+  });
+  const baseColor = fillForChord(currentChord, { object: true });
+  const currentFillBright = rgba(brightColor);
+  const currentFill = rgba(baseColor);
   const currentFillDark = fillForChord(currentChord, { isDark: true });
   document.body.style.background = currentFillDark;
+  publishCurrentColors(baseColor, brightColor);
   context.fillStyle = currentFillDark;
   context.fillRect(0, 0, width, height);
 
@@ -384,7 +440,7 @@ function render() {
   // the cells live in 0..1 space, where a square is not square on screen.
   const cells = layoutCells({
     grouped: chords,
-    layout: controller._layout,
+    layout: controller.layout,
     isLandscape,
     aspect: (chordShape.w * width) / (chordShape.h * height),
   });
@@ -449,6 +505,36 @@ function render() {
   document.body.style.setProperty("--gutter-height", Y_RAT * 100 + "%");
 
   controller.process(harpShape);
+}
+
+// A declaration rather than a const arrow, like everything else render()
+// reaches for: render is called during module evaluation, above this point,
+// and a const would still be in its dead zone when the first frame draws.
+function rgba({ r, g, b }, a = 1) {
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+/**
+ * Hand the held chord's colour to CSS, for the controls that are DOM.
+ *
+ * The lane buttons were the last thing on screen that was not themed: a black
+ * plate with white lettering sitting under a grid that changes colour with
+ * every press. They now take the chord's own fill, and their ink from the same
+ * `inkFor` the grid labels use — so the pair stays legible from the darkest
+ * forest cell to the brightest ember one, rather than being fixed contrast
+ * against a moving background.
+ *
+ * The fill is a step lighter than the page behind it, which is the same colour
+ * through `isDark`, and that step is the only edge these buttons have — they
+ * carry no border, the same way a chord cell carries none. The bright pair is
+ * for `done`, the inverted button.
+ */
+function publishCurrentColors(base, bright) {
+  const style = document.body.style;
+  style.setProperty("--current-fill", rgba(base));
+  style.setProperty("--current-ink", rgba(inkFor(base)));
+  style.setProperty("--current-fill-bright", rgba(bright));
+  style.setProperty("--current-ink-bright", rgba(inkFor(bright)));
 }
 
 function renderChordLabel(

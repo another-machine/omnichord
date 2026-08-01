@@ -1,6 +1,14 @@
 import { chords } from "./chords.js";
 import { Touch } from "./touch.js";
-import { BPM_MAX, BPM_MIN, RHYTHMS, Sounds, VOICES } from "./sounds.js";
+import {
+  BPM_MAX,
+  BPM_MIN,
+  LEVEL_DEFAULT,
+  RHYTHMS,
+  Sounds,
+  VOICES,
+  clampLevel,
+} from "./sounds.js";
 import { CUSTOM_THEME_ID, THEMES, resolveTheme, themeById } from "./theme.js";
 import {
   DEFAULT_HARP_SIDE,
@@ -43,6 +51,9 @@ export class Controller {
     this._rhythm = settings._rhythm;
     this._harpVoice = settings._harpVoice;
     this._padVoice = settings._padVoice;
+    this._harpLevel = settings._harpLevel;
+    this._padLevel = settings._padLevel;
+    this._drumLevel = settings._drumLevel;
     this._themeId = settings._themeId;
     this._themeCustom = settings._themeCustom;
     this.actives = settings.actives;
@@ -53,10 +64,13 @@ export class Controller {
     // and builds from it when initialize() runs.
     this.sounds.setHarpVoice(this._harpVoice);
     this.sounds.setPadVoice(this._padVoice);
+    this.sounds.setHarpLevel(this._harpLevel);
+    this.sounds.setPadLevel(this._padLevel);
+    this.sounds.setDrumLevel(this._drumLevel);
     this.sounds.setRhythm(this._rhythm);
     this.sounds.setBpm(this._bpm);
     this.touch = new Touch(canvas, () =>
-      this.sounds.initialize(this._rhythm, this._bpm)
+      this.sounds.activate(this._rhythm, this._bpm)
     );
   }
 
@@ -88,6 +102,9 @@ export class Controller {
       _rhythm: this._rhythm,
       _harpVoice: this._harpVoice,
       _padVoice: this._padVoice,
+      _harpLevel: this._harpLevel,
+      _padLevel: this._padLevel,
+      _drumLevel: this._drumLevel,
       _themeId: this._themeId,
       _themeCustom: this._themeCustom,
       actives: this.actives,
@@ -118,6 +135,9 @@ export class Controller {
       _rhythm: "rock",
       _harpVoice: VOICES[0].id,
       _padVoice: VOICES[0].id,
+      _harpLevel: LEVEL_DEFAULT,
+      _padLevel: LEVEL_DEFAULT,
+      _drumLevel: LEVEL_DEFAULT,
       _themeId: THEMES[0].id,
       _themeCustom: { ...THEMES[0] },
       actives: Object.values(chords).reduce((actives, chordArray) => {
@@ -138,6 +158,9 @@ export class Controller {
       _voice,
       _harpVoice,
       _padVoice,
+      _harpLevel,
+      _padLevel,
+      _drumLevel,
       _themeId,
       _themeCustom,
       actives,
@@ -180,6 +203,14 @@ export class Controller {
       _rhythm: RHYTHMS.includes(_rhythm) ? _rhythm : defaults._rhythm,
       _harpVoice: knownVoice(_harpVoice ?? _voice, defaults._harpVoice),
       _padVoice: knownVoice(_padVoice ?? _voice, defaults._padVoice),
+      // Clamped for the same reason as tempo: a save is a file from anywhere,
+      // and a level out of range would be shown on a slider that cannot
+      // represent it and written straight back to storage. A save made before
+      // the faders existed carries none of these and takes the default, which
+      // is the balance it was recorded at.
+      _harpLevel: clampLevel(_harpLevel, defaults._harpLevel),
+      _padLevel: clampLevel(_padLevel, defaults._padLevel),
+      _drumLevel: clampLevel(_drumLevel, defaults._drumLevel),
       _themeId:
         _themeId === CUSTOM_THEME_ID || themeById(_themeId)
           ? _themeId
@@ -214,12 +245,18 @@ export class Controller {
     this._rhythm = settings._rhythm;
     this._harpVoice = settings._harpVoice;
     this._padVoice = settings._padVoice;
+    this._harpLevel = settings._harpLevel;
+    this._padLevel = settings._padLevel;
+    this._drumLevel = settings._drumLevel;
     this._themeId = settings._themeId;
     this._themeCustom = settings._themeCustom;
     this.actives = settings.actives;
     this.handleFx();
     this.sounds.setHarpVoice(this._harpVoice);
     this.sounds.setPadVoice(this._padVoice);
+    this.sounds.setHarpLevel(this._harpLevel);
+    this.sounds.setPadLevel(this._padLevel);
+    this.sounds.setDrumLevel(this._drumLevel);
     this.sounds.setRhythm(this._rhythm);
     this.sounds.setBpm(this._bpm);
     this.save();
@@ -308,6 +345,29 @@ export class Controller {
     this._padVoice = this.sounds.setPadVoice(id);
     this.save();
     return this._padVoice;
+  }
+
+  /**
+   * The three faders. Each stores what Sounds gives back rather than what came
+   * in, so a value it clamped is the value kept — same contract as the voice
+   * and tempo setters above.
+   */
+  setHarpLevel(value) {
+    this._harpLevel = this.sounds.setHarpLevel(value);
+    this.save();
+    return this._harpLevel;
+  }
+
+  setPadLevel(value) {
+    this._padLevel = this.sounds.setPadLevel(value);
+    this.save();
+    return this._padLevel;
+  }
+
+  setDrumLevel(value) {
+    this._drumLevel = this.sounds.setDrumLevel(value);
+    this.save();
+    return this._drumLevel;
   }
 
   setHarpSide(id) {
@@ -488,6 +548,28 @@ export class Controller {
         : this.currentStepIdx;
       this.sounds.triggerHarp(area.chord.stepper[index]);
     }
+  }
+
+  /**
+   * The arrangement to draw with, which is not always the one that is set.
+   *
+   * Edit mode is always `fixed`. The grid there is the thing being edited —
+   * twelve roots across seven types, every chord in the place you go looking
+   * for it — and `flex` throws that away, repacking whatever exists into the
+   * squarest block it can find. Toggling one chord would move every other one,
+   * so the target you meant to hit next is somewhere else by the time you
+   * reach for it.
+   *
+   * Only `flex` is actually redirected here. `fill` differs from `fixed` by
+   * closing up the gaps disabled chords leave, and the `chords` getter below
+   * stops filtering entirely while editing — so with nothing removed there is
+   * nothing to close, and the two already draw the same grid.
+   *
+   * The menu still shows `_layout`, because that is the setting; this is only
+   * what the renderer is handed.
+   */
+  get layout() {
+    return this.mode === "edit" ? "fixed" : this._layout;
   }
 
   get chords() {

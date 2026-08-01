@@ -76,18 +76,28 @@
         value they hold.
 
         The buttons over the canvas and the ones inside the panel are a single
-        control style, declared once here. The only thing the canvas pair adds
-        is a dark backing: the panel's buttons sit on a dimmed overlay that
-        makes a 0.08 white fill legible, while these sit directly on a grid of
-        saturated colour, where that same fill would vanish.
+        control style, declared once here. What the canvas pair adds is a
+        backing: the panel's buttons sit on a dimmed overlay that makes a faint
+        white fill legible, while these sit on the instrument itself, where
+        that same fill would vanish.
+
+        No border and no radius on any of it. The instrument is hard-edged
+        blocks of flat colour meeting at a gutter, and a control that outlines
+        and rounds itself is announcing that it came from somewhere else. A
+        block of its own colour is the whole edge these need — which is exactly
+        how the chord cells are told apart from the background behind them.
+
+        Which is why the fill went up from 0.08 to 0.14 when the border came
+        off. It was 0.08 plus a line at 0.2, and the line was carrying most of
+        the definition; at 0.08 alone, over a panel backdrop that is a blurred
+        chord grid and so never the same twice, the buttons washed out.
       */
       .panel-inner button,
       #menu-open,
       #edit-actions button {
         appearance: none;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 0.2em;
+        background: rgba(255, 255, 255, 0.14);
+        border: none;
         color: #fff;
         font-family: var(--font-family);
         line-height: 1;
@@ -104,19 +114,44 @@
       .panel-inner button {
         font-size: inherit;
       }
+      /*
+        The lane pair wears the held chord instead of staying black and white
+        under a grid that changes colour with every press. app.js publishes the
+        current fill and, through the same inkFor the chord labels use, the ink
+        that reads on it — so the two move together across the whole palette
+        rather than one being fixed contrast against the other. The fallback is
+        the old dark plate, for the frame before the first render.
+
+        This is also what pays for the missing border: the lane behind the
+        button is the same colour through isDark, so the button separates from
+        it the way a chord cell separates from the gutter — one step of
+        lightness, no line.
+
+        No backdrop-filter any more: the fill is opaque, so there was nothing
+        left for a blur behind it to show.
+      */
       #menu-open,
       #edit-actions button {
-        backdrop-filter: blur(12px);
-        background-color: rgba(0, 0, 0, 0.55);
+        background-color: var(--current-fill, rgba(0, 0, 0, 0.55));
+        color: var(--current-ink, #fff);
         font-size: var(--control-font-size);
         padding: 0.55em 0.85em;
         white-space: nowrap;
       }
-      .panel-inner button.done,
-      #edit-actions button.done {
+      /*
+        The panel's done button keeps its white plate — it sits on a dimmed
+        overlay rather than on the instrument, and the overlay is the same
+        black whatever is held underneath it.
+      */
+      .panel-inner button.done {
         background-color: rgba(255, 255, 255, 0.9);
-        border-color: transparent;
         color: #000;
+      }
+      /* Inverted the same way, but in the theme: the lit shade of the chord,
+         with whichever ink that shade can carry. */
+      #edit-actions button.done {
+        background-color: var(--current-fill-bright, rgba(255, 255, 255, 0.9));
+        color: var(--current-ink-bright, #000);
       }
 
       /*
@@ -206,12 +241,14 @@
       .row > span {
         opacity: 0.75;
       }
+      /* Flat and square like the buttons, and at the same weight — with the
+         borders gone the fill is the only thing marking a control off from the
+         panel, so there is nothing to be gained by the two disagreeing. */
       .panel-inner select,
       .panel-inner input[type="number"] {
         appearance: none;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 0.2em;
+        background: rgba(255, 255, 255, 0.14);
+        border: none;
         color: #fff;
         font-family: var(--font-family);
         font-size: inherit;
@@ -293,7 +330,6 @@
         z-index: 1000;
       }
       #export-overlay img {
-        border-radius: 0.2em;
         /*
           Stegassette sizes its output from the payload alone, so a couple of
           kilobytes of settings comes out as a few dozen pixels across. It has
@@ -313,6 +349,26 @@
         -webkit-touch-callout: default;
         -webkit-user-select: auto;
         user-select: auto;
+      }
+      #export-overlay .actions {
+        display: flex;
+        gap: 0.5em;
+      }
+      /* Same flat block as every other control. One of the pair is an anchor
+         and the other a button, and neither should arrive looking like it —
+         they do the same kind of thing and should read as one row. */
+      #export-overlay a,
+      #export-overlay button {
+        appearance: none;
+        background: rgba(255, 255, 255, 0.14);
+        border: none;
+        color: #fff;
+        font-family: var(--font-family);
+        font-size: var(--control-font-size);
+        line-height: 1;
+        padding: 0.7em 1.4em;
+        text-decoration: none;
+        text-transform: lowercase;
       }
       #export-overlay p {
         color: rgba(255, 255, 255, 0.7);
@@ -386,6 +442,30 @@
           </span>
         </label>
         <button id="rhythm-toggle" type="button">start rhythm</button>
+        <hr />
+        <!--
+          The three faders. 100 is the balance the voices were levelled into,
+          not the top of the range — see LEVEL_MAX in sounds.js for why they
+          go past it.
+        -->
+        <label class="row">
+          <span>chord level</span>
+          <span class="pair">
+            <input id="pad-level" type="range" min="0" max="200" step="1" />
+          </span>
+        </label>
+        <label class="row">
+          <span>harp level</span>
+          <span class="pair">
+            <input id="harp-level" type="range" min="0" max="200" step="1" />
+          </span>
+        </label>
+        <label class="row">
+          <span>drum level</span>
+          <span class="pair">
+            <input id="drum-level" type="range" min="0" max="200" step="1" />
+          </span>
+        </label>
         <hr />
         <label class="row">
           <span>fx</span>

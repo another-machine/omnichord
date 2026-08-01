@@ -12,10 +12,10 @@ export class TouchPointer {
 }
 
 export class Touch {
-  constructor(element = document.body, onInitialized = () => {}) {
+  constructor(element = document.body, onActivate = () => {}) {
     this.element = element;
     this.initialized = false;
-    this.onInitialized = onInitialized;
+    this.onActivate = onActivate;
     element.addEventListener("pointermove", this.handleTouchMove.bind(this));
     element.addEventListener("pointerleave", this.handleTouchEnd.bind(this));
     element.addEventListener("pointerup", this.handleTouchEnd.bind(this));
@@ -51,11 +51,18 @@ export class Touch {
     return { x, y, w, h };
   }
 
+  /**
+   * Called on both halves of a press, which is not redundant.
+   *
+   * The press is what has to build the audio, because Controller#process holds
+   * the pending pointer back until it exists — that is what lets the first tap
+   * play rather than only arming the instrument. But on a touchscreen the
+   * press carries no user activation, so the context it builds starts
+   * suspended; the release is the event that can unsuspend it. `onActivate` is
+   * written to be called as often as it likes, so both ends just call it.
+   */
   async handleAnyEventOccurred() {
-    if (this.initialized) {
-      return;
-    }
-    await this.onInitialized();
+    await this.onActivate();
     this.initialized = true;
   }
 
@@ -109,6 +116,9 @@ export class Touch {
   }
   handleTouchEnd(event) {
     event.preventDefault();
+    // A touch gets its user activation on the release, so this is where a
+    // context built by the press is finally allowed to start running.
+    this.handleAnyEventOccurred();
     const { pointerId: id } = event;
     if (this.pointers[id]) {
       this.pointers[id].x = Infinity;
