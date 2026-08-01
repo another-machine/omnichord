@@ -14,8 +14,20 @@ import {
   resolveTheme,
 } from "./theme.js";
 
-/** How much the label lets the cell through. See inkFor in theme.js. */
-const INK_OPACITY = 0.9;
+/**
+ * How much of the ink a label keeps, the rest being the cell showing through.
+ *
+ * This is a look, and it is bought with legibility. Measured over all 1008
+ * cell-and-state combinations: at 1 the worst contrast is 4.6:1, at 0.7 it is
+ * 3.14:1, and at 0.6 it is 2.64:1 with 35 of them under the 3:1 the WCAG asks
+ * of text this size. 0.7 is the lowest that keeps every one of them above it.
+ *
+ * Left at 0.6 deliberately — the labels are a guide on an instrument you are
+ * looking at rather than reading, and the 35 are the mid-lightness cells where
+ * neither white nor black has anywhere to go. Raise it if any of them read too
+ * faint on a real screen.
+ */
+const INK_OPACITY = 0.6;
 
 const canvas = document.querySelector("canvas");
 const context = canvas.getContext("2d");
