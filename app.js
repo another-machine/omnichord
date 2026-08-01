@@ -8,6 +8,8 @@ import {
   HUE_MAX,
   THEMES,
   colorFor,
+  hsvToRgb,
+  inkFor,
   neutralFor,
   resolveTheme,
 } from "./theme.js";
@@ -463,7 +465,9 @@ function render() {
 
 function renderChordLabel(
   { id: text, x: relX, y: relY, w: relW, h: relH },
-  { r, g, b },
+  // Renamed on the way in: this function already has its own h and w for the
+  // cell's measured height and width.
+  { h: cellHue, s: cellSaturation, l: cellLightness },
   highlighted,
   italic,
   maxFontSize = Infinity
@@ -474,19 +478,20 @@ function renderChordLabel(
   const x = w * 0.5 + relX * W + X;
   const y = h * 0.5 + relY * H + Y;
   const fontSize = Math.min(maxFontSize, Math.round(Math.min(w, h) * 0.25));
-  context.fillStyle = highlighted
-    ? "rgba(255, 255, 255, 0.95)"
-    : `rgba(${r}, ${g}, ${b}, 0.7)`;
+  // Ink picked against the cell this sits on, rather than the cell's own
+  // colour plus an offset shadow faking an edge. There is no shadow now: the
+  // contrast is in the colour, so nothing depends on how a browser renders a
+  // one-pixel blur — which is what looked wrong in Safari.
+  const ink = inkFor({
+    h: cellHue,
+    s: cellSaturation,
+    l: cellLightness,
+  });
+  context.fillStyle = `rgb(${ink.r}, ${ink.g}, ${ink.b})`;
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.save();
   context.translate(x, y);
-  context.shadowColor = highlighted
-    ? "rgba(255, 255, 255, 0.4)"
-    : "rgba(0, 0, 0, 0.4)";
-  context.shadowBlur = 1;
-  context.shadowOffsetX = context.shadowOffsetY =
-    fontSize * 0.05 * (highlighted ? -1 : 1);
   context.font = `${
     italic ? "italic" : ""
   } 600 ${fontSize}px "Andale Mono", "Trebuchet MS", "Lucida Sans Unicode", monospace`;
@@ -559,37 +564,4 @@ function sizeCanvas() {
   canvas.height = canvas.clientHeight * 2;
   canvas.width = canvas.clientWidth * 2;
   document.body.classList.remove("resizing");
-}
-
-function hsvToRgb(h, s, v) {
-  const C = v * s;
-  const hh = h / 60.0;
-  const X = C * (1.0 - Math.abs((hh % 2) - 1.0));
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  if (hh >= 0 && hh < 1) {
-    r = C;
-    g = X;
-  } else if (hh >= 1 && hh < 2) {
-    r = X;
-    g = C;
-  } else if (hh >= 2 && hh < 3) {
-    g = C;
-    b = X;
-  } else if (hh >= 3 && hh < 4) {
-    g = X;
-    b = C;
-  } else if (hh >= 4 && hh < 5) {
-    r = X;
-    b = C;
-  } else {
-    r = C;
-    b = X;
-  }
-  const m = v - C;
-  r = Math.round((r + m) * 255.0);
-  g = Math.round((g + m) * 255.0);
-  b = Math.round((b + m) * 255.0);
-  return { r, g, b };
 }
