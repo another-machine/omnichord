@@ -456,15 +456,16 @@
       All three are pinned. music-theory 0.1.0 never assigns Chord#type;
       chords.js sets it itself, so moving this to 0.1.1 is safe but not
       required. sound-synthesis 0.2.0 is where TapeDelay and Reverb arrived.
-      steganography 1.0.0 dropped the pre-STGC modules; cartridge.js only wants
-      Stegassette and createDropReader, both of which survived.
+      steganography 1.2.0: 1.0.0 dropped the pre-STGC modules, 1.1.0 added the
+      collection layer, 1.2.0 dropped CODEC_VERSION. cartridge.js only wants
+      Stegassette and createDropReader, which every one of those left alone.
     -->
     <script type="importmap">
       {
         "imports": {
           "@amplib/music-theory": "https://unpkg.com/@amplib/music-theory@0.1.0/dist/index.js",
           "@amplib/sound-synthesis": "https://unpkg.com/@amplib/sound-synthesis@0.2.0/dist/index.js",
-          "@amplib/steganography": "https://unpkg.com/@amplib/steganography@1.0.0/dist/index.js"
+          "@amplib/steganography": "https://unpkg.com/@amplib/steganography@1.2.0/dist/index.js"
         }
       }
     </script>
