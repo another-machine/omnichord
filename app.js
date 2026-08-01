@@ -14,6 +14,9 @@ import {
   resolveTheme,
 } from "./theme.js";
 
+/** How much the label lets the cell through. See inkFor in theme.js. */
+const INK_OPACITY = 0.9;
+
 const canvas = document.querySelector("canvas");
 const context = canvas.getContext("2d");
 
@@ -434,33 +437,6 @@ function render() {
   document.body.style.setProperty("--gutter-height", Y_RAT * 100 + "%");
 
   controller.process(harpShape);
-
-  if (!controller.touch.initialized && controller.mode !== "edit") {
-    const { r, g, b } = fillForChord(currentChord, {
-      isDark: true,
-      object: true,
-    });
-    renderRectangle(chordShape, `rgba(${r}, ${g}, ${b},0.8)`);
-    const fontSize = Math.max(
-      30,
-      Math.round(Math.min(canvas.width, canvas.height) * 0.02)
-    );
-    context.fillStyle = "rgba(255, 255, 255, 0.95)";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.save();
-    context.translate(
-      chordShape.x + chordShape.w * 0.5 * canvas.width,
-      chordShape.y + chordShape.h * 0.5 * canvas.height
-    );
-    context.font = `italic 600 ${fontSize}px "Andale Mono", "Trebuchet MS", "Lucida Sans Unicode", monospace`;
-    const message =
-      controller.sounds.loaded === undefined
-        ? "tap anywhere to start"
-        : "loading...";
-    context.fillText(message, 0, 0);
-    context.restore();
-  }
 }
 
 function renderChordLabel(
@@ -487,7 +463,10 @@ function renderChordLabel(
     s: cellSaturation,
     l: cellLightness,
   });
-  context.fillStyle = `rgb(${ink.r}, ${ink.g}, ${ink.b})`;
+  // Slightly transparent so the ink settles back into the cell rather than
+  // sitting on top of it. The tint budget in theme.js accounts for the
+  // contrast this costs.
+  context.fillStyle = `rgba(${ink.r}, ${ink.g}, ${ink.b}, ${INK_OPACITY})`;
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.save();

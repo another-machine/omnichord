@@ -84,18 +84,23 @@ export function inkFor({ h, s, l }) {
 }
 
 /**
- * How much of the cell's hue the light ink carries.
+ * How much of the cell's hue the light ink carries: none.
  *
- * Tint costs contrast, because ink sharing a hue with what it sits on is
- * nearer to it. Measured across every chord in every theme, in both the held
- * and unheld state, 0.06 is the most that keeps all 1008 combinations at or
- * above the 4.5:1 the WCAG asks for — 0.08 puts fourteen of them under.
+ * It used to carry a little, so the labels kept some of the palette. That is
+ * now done better by the alpha the label is drawn at — compositing the ink
+ * over the cell mixes the cell's own colour in, which is the same effect
+ * arrived at from the right direction.
  *
- * The dark ink gets none, and is plain black. Giving it any lightness to carry
- * a tint in fails the same fourteen: a dark tinted ink on a dark saturated cell
- * of the same hue is not far enough away.
+ * Doing both is what it cannot afford. Tint and alpha spend the same budget,
+ * because each moves the ink nearer to what it sits on, and measured across
+ * all 1008 combinations the pair together drops the worst case to 3.97:1.
+ * Alpha alone holds it at 4.34:1.
+ *
+ * The dark ink is plain black for the same reason, and always was: giving it
+ * any lightness to carry a tint puts a dark ink on a dark cell of its own hue,
+ * which is not far enough away.
  */
-const LIGHT_INK_TINT = 0.06;
+const LIGHT_INK_TINT = 0;
 
 /** WCAG relative luminance. */
 function relativeLuminance({ r, g, b }) {

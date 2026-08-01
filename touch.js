@@ -59,11 +59,15 @@ export class Touch {
     this.initialized = true;
   }
 
+  /**
+   * Pointers are recorded from the very first event, before the audio context
+   * exists. What waits for initialization is the *handling* — see
+   * Controller#process — so that the press which starts the audio is still
+   * sitting there to be acted on once it has, instead of being discarded and
+   * needing a second tap.
+   */
   handleTouchMove(event) {
     event.preventDefault();
-    if (!this.initialized) {
-      return;
-    }
     const {
       pointerId: id,
       offsetX,
@@ -79,9 +83,6 @@ export class Touch {
   }
   handleTouchStart(event) {
     event.preventDefault();
-    if (!this.initialized) {
-      return;
-    }
     const {
       pointerId: id,
       offsetX,
@@ -108,9 +109,6 @@ export class Touch {
   }
   handleTouchEnd(event) {
     event.preventDefault();
-    if (!this.initialized) {
-      return;
-    }
     const { pointerId: id } = event;
     if (this.pointers[id]) {
       this.pointers[id].x = Infinity;

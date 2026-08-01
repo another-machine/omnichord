@@ -242,17 +242,21 @@ export class Controller {
   }
 
   process(harpShape) {
+    // Nothing is read until the audio is up. updatePointers reports edges —
+    // a press is only "down" on the frame it arrives — so calling it earlier
+    // would consume the very press that started the audio and leave nothing
+    // to play. Held back, that press is still pending on the first frame
+    // after initialization, and the tap that starts the instrument is also
+    // the tap that sounds a chord.
+    if (!this.touch.initialized) return;
     const states = this.touch.updatePointers(Object.values(this.areas));
     for (let areaId in states) {
       const { pointer, state } = states[areaId];
-      if (state) {
-        if (this.touch.initialized) {
-          if (areaId === "stepper") {
-            this.handleStepper(pointer, state, harpShape);
-          } else if (state === "down") {
-            this.handlePad(areaId);
-          }
-        }
+      if (!state) continue;
+      if (areaId === "stepper") {
+        this.handleStepper(pointer, state, harpShape);
+      } else if (state === "down") {
+        this.handlePad(areaId);
       }
     }
   }
